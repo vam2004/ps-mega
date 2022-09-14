@@ -3,38 +3,88 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import path from "node:path";
-
+// inject the envoriment variables
 dotenv.config();
+// create the main router
 const app = express();
-
+// parses application/json
 app.use(express.json());
+// parses cookie header
 app.use(cookieParser());
+// parse application/x-www-urlencoded-form
 app.use(express.urlencoded({extended:true}));
 
-const token_max_age = 300;
-const reflesh_when = 15;
+// redirect / to /login
+app.get("/", redirectToLogin);
+// deny acess to private resources
+app.use(privateBarrier);
 
-function get_expiration(seconds) {
+export function get_expiration(seconds) {
 	const since_epoch = Date.now();
 	return new Date(since_epoch + seconds * 1000);
 }
-function create_token(res, user, user_ip, role = "client") {
-	const exp_date = get_expiration(token_max_age);
-	const rfsh_date = get_expiration(reflesh_when);
-	const token = {
-		user, role,
-		untl: exp_date.toISOString(),
-		rfsh: rfsh_date.toISOString(),
-		uuip: user_ip
-	}
-	console.log("auth-token:", token)
-	console.log(`until=${exp_date.toString()}, reflesh=${rfsh_date.toString()}`)
-	const secret_key = process.env.JWT_SECRET_KEY || "default-secret";
-	const cookie = jwt.sign(token, secret_key, {
-		expiresIn: token_max_age
-	});
-	res.cookie("auth-token", cookie, {sameSite: true, maxAge: token_max_age * 1000 });
+export function validate_roles(role) {
+	const user_roles = ["client", "agencie", "manager", "supervisor", "bank"];
+	return user_roles.indexOf(role) !== -1;
 }
+/** 
+*   validates and parse client CPF/CNPJ return it as number
+* 	@param {string} user
+*	@return {{ client_type: "CPF" | "CPNJ", value: number} | undefined}
+*/
+export function parse_client(user) {
+	// valid CPF spec: "xxx.xxx.xxx-yy"
+	// valid CPNJ spec: "xx.xxx.xxx/yyy-zz"
+	// https://pt.wikipedia.org/wiki/Cadastro_Nacional_da_Pessoa_Jur%C3%ADdica
+	// https://pt.wikipedia.org/wiki/Cadastro_de_Pessoas_F%C3%ADsicas
+	return 0;
+}
+export function sane_html(src) {
+	return src.replaceAll("<", "&gt").replaceAll(">", "&lt");
+}
+class TokenFactory {
+	static token_max_age = 300; // seconds (default time)
+	static reflesh_after = 15; // seconds (default time)
+	
+	
+	create_token(res, data, role = "client") {
+		// validate user's role
+		if(!validate_roles(role)) 
+			return true;
+		// parse the user
+		let user = sane_html(data.user ?? "");
+		if(role == "client") {
+			user = parse_client(user);
+		}
+		// validate the user
+		if(user === undefined)
+			return true;
+		// calculates the expiration date
+		const maxAge = data.maxAge || TokenFactory.token_max_age
+		const exp_date = get_expiration(maxAge);
+	
+		const token = {
+			user: user,
+			//untl: exp_date.toISOString()
+			role: role,
+			uuip: data.uuip,
+		}
+		// calculate reflesh date
+		if (data.reflesh && data.reflesh > 0)  {
+			const rfsh_date = = get_expiration(data.reflesh);
+			token.rfsh = rfsh_date.toISOString();
+			console.log(`reflesh=${rfsh_date.toString()}`);
+		} else {
+			token.rfsh = (data.reflesh !== 0);
+		}
+		console.log("auth-token:", token);
+		// generate the session cookie
+		const secret_key = process.env.JWT_SECRET_KEY || "default-secret";
+		const cookie = jwt.sign(token, secret_key, { expiresIn: maxAge });
+		res.cookie("auth-token", cookie, {sameSite: true, maxAge: maxAge * 1000 });
+	}
+}
+
 function fetch_token(req, res) {
 	const user_ip = req.ip;
 	if(req.body && req.body.user) {
@@ -54,7 +104,7 @@ export function setupLogin(public_files = path.resolve("public")) {
 	console.log(`login files path: ${login_files}`);
 	app.use("/login", express.static(login_files));
 	// redirect users to login page first
-	app.get("/", redirectToLogin);
+	
 	// send login.html
 	app.get("/login", function(req, res){ 
 		res.sendFile(login_files + "/login.html") 
@@ -65,7 +115,7 @@ export function setupLogin(public_files = path.resolve("public")) {
 			res.redirect("/session")
 		}
 	});
-	app.use(privateBarrier);
+	
 	const private_routes = express.Router();
 	app.use("/", private_routes);
 	return private_routes;
