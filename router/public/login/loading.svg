@@ -7,5 +7,5 @@
 			<stop stop-color="#2D0039" offset="100%"/>
 		</linearGradient>
 	</defs>
-	<circle cx="50%" cy="50%" r="45%" fill="url(#backcover)" stroke="#c73b2370" stroke-width="6px"/>
+	<circle cx="50%" cy="50%" r="49%" fill="url(#backcover)" stroke="#c73b2370" stroke-width="6px"/>
 </svg>

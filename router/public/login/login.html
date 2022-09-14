@@ -4,13 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" type="text/css" href="./style.css">
+    <link rel="stylesheet" type="text/css" href="/login/style.css">
     <title>MegaBank</title>
 </head>
 
 <body>
-	<div class="loading-root">
-		<img  class="loading-circle" src="loading.svg"/>
+	<div id="loading-root">
+		<img  id="loading-circle" src="/login/loading.svg"/>
+		<script type="module">
+			const animation_root = document.getElementById("loading-root");
+			console.log(animation_root);
+			animation_root.addEventListener("animationend", function(evt){
+				evt.target.style.display = "none";
+			})
+		</script>
 	</div>
     <div class="box">  
         <div id="header">
@@ -19,11 +26,11 @@
             </div>
         </div>
 
-        <form>
+        <form action="/login" method="post">
     
-            <input id="login_box" placeholder="Insira seu CPF ou CNPJ">
+            <input id="login_box" name="user" placeholder="Insira seu CPF ou CNPJ">
             
-            <input id="password_box" placeholder="Insira sua senha">
+            <input id="password_box" name="pass" placeholder="Insira sua senha">
 
             <input id="login_bottom" type="submit" value="LOGIN"> 
         </form>
