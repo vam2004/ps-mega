@@ -15,7 +15,7 @@ function acess_control (group) {
 		if(!group_handler) {
 			group_handler = express.Router();
 			this.use(function(req, res, next) {
-				if(req.session_data && req.session_data.group_name === group) {
+				if(req.session_data && req.session_data.groupname === group) {
 					group_handler.handle(req, res, next);
 				} else {
 					next();
@@ -27,7 +27,7 @@ function acess_control (group) {
 	if(!private_routers.general) {
 		const general_handler = express.Router();
 		this.use(this.use(function(req, res, next) {
-			if(req.session_data && req.session_data.group_name) {
+			if(req.session_data && req.session_data.groupname) {
 				general_handler.handle(req, res, next);
 			} else {
 				next();
@@ -39,7 +39,7 @@ function acess_control (group) {
 export function group_wrapper(callback, groups) {
 	if(groups === undefined) {
 		return function(req, res, next) {
-			if(req.session_data && req.session_data.group_name) {
+			if(req.session_data && req.session_data.groupname) {
 				callback(req, res, next);
 			} else {
 				res.status(401).send(); // not allowed
