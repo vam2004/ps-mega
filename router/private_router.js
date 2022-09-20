@@ -4,11 +4,10 @@ express.Router.acess_control = acess_control;
 express.group_wrapper = group_wrapper;
 
 function acess_control (group) {
-	// this is require("./express/application")
-	if(!this.private_routers)
-		this.private_routers = {
-			groups: new Map();
-		}
+	// "this" is "typeof require("./express/application")"
+	this.private_routers ??= {
+		groups: new Map(),
+	}
 	const private_routers = this.private_routers;
 	if(typeof group === "string") {
 		let group_handler = private_routers.groups.get(group);
@@ -26,13 +25,14 @@ function acess_control (group) {
 	}
 	if(!private_routers.general) {
 		const general_handler = express.Router();
-		this.use(this.use(function(req, res, next) {
+		this.use(function(req, res, next) {
 			if(req.session_data && req.session_data.groupname) {
 				general_handler.handle(req, res, next);
 			} else {
 				next();
 			}
 		});
+		private_routers.general = general_handler;	
 	}
 	return private_routers.general;
 }

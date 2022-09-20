@@ -1,8 +1,9 @@
 import * as dotenv from "dotenv";
-import express from "private_router.js";
 import cookieParser from "cookie-parser";
-import sessions from "sessions.js";
 import path from "node:path";
+
+import express from "./private_router.js";
+import sessions from "./sessions.js";
 // inject the envoriment variables
 dotenv.config();
 // create the main router
@@ -15,12 +16,12 @@ app.use(cookieParser());
 app.use(express.urlencoded({extended:true}));
 
 sessions.prototype.fetch_token = function(req, res) {
-	const source_adress = req.ip;
+	const adress = req.ip;
 	const groupname = req.body?.role ?? "client";
 	const username = req.body?.user;
 	const config = req.session_data?.config;
 	req.session_data = {
-		username, groupname, source_adress, config,
+		username, groupname, adress, config,
 	}
 	if(this.update_token(req, res)) {
 		res.redirect(401, "/login");
@@ -29,9 +30,14 @@ sessions.prototype.fetch_token = function(req, res) {
 	return false;
 }
 
-const sessions_handler = new sessions();
+const sessions_handler = new sessions({
+	reflesh: true,
+});
 
-app.use(sessions_handler.inject_cookie);
+app.use(function(req, res, next){
+	sessions_handler.inject_flesh(req, res);
+	next();
+});
 
 // homepage is login when user is not already logged in
 app.get("/", function(req, res){
@@ -66,7 +72,6 @@ setupLogin(path.resolve("public"));
 
 const private_routes = app.acess_control();
 
-console.log(private_routes);
 
 private_routes.get("/session", function(req, res){
 	res.send(`<h1>Hello ${req.session_data.groupname} "${req.session_data.username}"<h1>`);
