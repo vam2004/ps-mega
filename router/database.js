@@ -1,30 +1,22 @@
 import sqlite from "sqlite3";
 import libcrypto from "node:crypto";
 import libbuffer from "node:buffer";
-class UserAlreadyExists extends Error { }
-class UserNotExists extends Error { }
-class PasswordExperied extends Error { }
-class UserIsBlocked extends Error { }
-class AuthFailed extends Error { }
-
-class SQLInternalError extends Error { 
+// errors
+export class UserAlreadyExists extends Error { }
+export class UserNotExists extends Error { }
+export class PasswordExperied extends Error { }
+export class UserIsBlocked extends Error { }
+export class AuthFailed extends Error { }
+// internal sql error
+export class SQLInternalError extends Error { 
 	constructor(err) {
 		this.sql_error = err;
 	}
 }
-
-
-class UserRow {
-	constructor(row, date_decoder) {
-		this.hashname = row.hashname;
-		this.hashpass = row.hashpass;
-		this.tries = row.tries;
-		this.last_try = date_decoder(row.last_try);
-		this.__rows__ = row
-	}
-}
-
-class promisefySqlite {
+// constants 
+const NON_BLOCKING_AUTH = -1;
+// transform sqlite calls into promises 
+export class promisefySqlite {
 	constructor(database) {
 		this.database = database;
 	}
@@ -47,7 +39,7 @@ class promisefySqlite {
 		const database = this.database;
 		return new Promise(function(res, rej){
 			params.push(function(err, row) {
-				console.log({ query, params, row, err, _this_: this});
+				//console.log({ query, params, row, err, _this_: this});
 				if(err != null) { 
 					rej(new SQLInternalError(err)); 
 				} else { 
@@ -58,24 +50,19 @@ class promisefySqlite {
 		});
 	}
 }
-
-const NON_BLOCKING_AUTH = -1;
-
-function create_hasher(hashername, global_salt) {
-	return function (data, encoding){
-		const hasher = libcrypto.createHmac(hashername, global_salt)
+function Helpers(database, config) {
+	function create_hasher(hashername, global_salt) {
+	const global_salt = config?.global_salt ?? "i'm not secret";
+	const hmac_name = config?.innerhasher ?? "sha256";
+	this.encode_date = config?.date_encoder ?? (time => time.toISOString());
+	this.decode_date = config?.date_decoder ?? (time => new Date(time));
+	this.userblocked = config?.on_userblocked ?? (user => false);
+	const MAX_TRIES = config?.max_auth_tries ?? NON_BLOCKING_AUTH;
+	
+	function innerhasher(data, encoding) {
+		const hasher = libcrypto.createHmac(hmac_name, global_salt)
 		return hasher.update(data).digest(encoding);
 	}
-}
-function LoginDB(database, config) {
-	const encode_date = config?.date_encoder ?? (time => time.toISOString());
-	const decode_date = config?.date_decoder ?? (time => new Date(time));
-	const global_salt = config?.global_salt ?? "i'm not secret";
-	const MAX_TRIES = config?.max_auth_tries ?? NON_BLOCKING_AUTH;
-	const innerhasher = create_hasher(config?.innerhasher ?? "sha256", global_salt);
-	const on_userblocked = config?.on_userblocked ?? (user => false);
-	const asyncdb = new promisefySqlite(database);
-	
 	function ensure_affected(row) {
 		if(row === undefined) {
 			return Promise.reject(new UserNotExists())
@@ -96,7 +83,7 @@ function LoginDB(database, config) {
 		const query = "UPDATE main SET tries = 0 WHERE username = ?";
 		return asyncdb.exec(query, hashname);
 	}
-	function cmp_pass(localpass, source) {
+	function compare_pass(localpass, source) {
 		const hashpass = innerhasher(source);
 		const length = localpass.length;
 		if(length !== hashpass.length)
@@ -107,58 +94,49 @@ function LoginDB(database, config) {
 		}
 		return true;
 	}
-	function atomic_auth(hashname, hashpass) {
-		get_user(hashname).then(function(user){
-			console.log("Auth:", user.__rows__)
-			const unblocked = new Promise(function(res, rej) {
-				if(MAX_TRIES === NON_BLOCKING_AUTH || user.tries < MAX_TRIES) {
-					res();
-				} else if(on_userblocked(user)) {
-					clear_tries(hashname).then(res);
-				} else {
-					rej(new UserIsBlocked());
-				} 
-			});
-			return unblocked.then(function(){
-				if(!cmp_pass(user.hashpass, hashpass)) {
-					return inclease_tries().then(() => Promise.reject(new AuthFailed()));
-				}
-				return Promise.resolve();
-			});
+	function ensure_unblocked(user) {
+		console.log("Analizing user:", user);
+		return new Promise(function(res, rej) {
+			if(MAX_TRIES === NON_BLOCKING_AUTH || user.tries < MAX_TRIES) {
+				res(user);
+			} else if(userblocked(user)) {
+				clear_tries(user.hashname).then(res);
+			} else {
+				rej(new UserIsBlocked());
+			} 
 		});
 	}
-	/**
-	* Adds a client to database if not exist, otherwise throws UserAlreadyExists();
-	* @param {Buffer} hashname
-	* @param {Buffer} hashpass
-	* @returns {void}
-	*/
+	this.innerhasher = innerhasher;
+	this.inclease_tries = inclease_tries;
+	this.clear_tries = clear_tries;
+	this.compare_pass = compare_pass;
+	this.get_user = get_user;
+	this.ensure_affected = ensure_affected;
+}
+
+
+export function LoginDB(database, config) {
+	const asyncdb = new promisefySqlite(database);
+	const helpers = new Helpers();
+	function atomic_auth(hashname, hashpass) {
+		get_user(hashname).then(helpers.ensure_unblocked).then(function(user){
+			if(!cmp_pass(user.hashpass, hashpass)) {
+				return inclease_tries().then(() => Promise.reject(new AuthFailed()));
+			}
+			return Promise.resolve();
+		});
+	}
 	function add(hashname, hashpass) {
 		const query = "INSERT OR ABORT INTO main VALUES (?, ?, 0, ?)";
 		const now = encode_date(new Date());
-		return asyncdb.run(query, hashname, innerhasher(hashpass), now);
+		return asyncdb.run(query, hashname, helpers.innerhasher(hashpass), now);
 	}
-	/**
-	* Auth and Remove a client from database if exists, otherwise rejects with UserNotExists() or AuthError()
-	* @param {Buffer} hashname
-	* @param {Buffer} hashpass
-	* @returns {Promise<void>}
-	*/
 	function remove(hashname, hashpass) {
 		const query = "DELETE FROM main WHERE main.hashname = ?";
 		return auth(hashname, hashpass).then(function(){
-			return asyncdb.get(query, hashname).then(ensure_affected);
+			return asyncdb.get(query, hashname).then(helpers.ensure_affected);
 		})
 	}
-	/**
-	* Compare the hashs if user exists, isn't blocked 
-	* and if the passphase still valid.
-	* Otherwise rejects with UserNotExists(), PasswordExperied() or UserIsBlocked().
-	* Afected 
-	* @param {Buffer} hashname
-	* @param {Buffer} hashpass
-	* @returns {Promise<void>}
-	*/
 	function create_schema() {
 		const query = `CREATE TABLE IF NOT EXISTS main 
 			(hashname BLOB PRIMARY KEY, hashpass BLOB, tries INT, last_try STRING)`;
@@ -191,6 +169,7 @@ async function test_login() {
 	await db.create_schema();
 	await db.add(hashname, hashpass);
 	await db.atomic_auth(hashname, hashpass);
+	db.atomic_auth(hashname, libbuffer.Buffer.from("pass_123", 'utf8'))
 }
 //test_promisefy()
 test_login();

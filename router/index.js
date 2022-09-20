@@ -31,7 +31,9 @@ sessions.prototype.fetch_token = function(req, res) {
 }
 
 const sessions_handler = new sessions({
-	reflesh: true,
+	defaults: {
+		reflesh: true,
+	}
 });
 
 app.use(function(req, res, next){
