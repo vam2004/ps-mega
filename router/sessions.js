@@ -40,9 +40,43 @@ export function calc_reflesh(source) {
 	}
 	return (source !== 0);
 }
+export class SessionError extends Error {
+	constructor(message = "General Session Error") {
+		super(message)
+	}
+}
+export class InvalidGroup extends SessionError {
+	constructor(message = "Invalid groupname provided") {
+		super(message)
+	}
+}
+export class InvalidName extends SessionError {
+	constructor(message = "Invalid username provided") {
+		super(message)
+	}
+}
+export class InvalidToken extends SessionError {
+	constructor(message = "A invalid Session Token was found") {
+		super(message);
+	}
+}
+export class SignatureError extends InvalidToken {
+	constructor(message = "Session Token was not a valid signature") {
+		super(message);
+	}
+}
+export class TokenExpired extends SessionError {
+	constructor(message = "Session Token was already expired") {
+		super(message);
+	}
+}
+export class TokenNeeded extends SessionError {
+	constructor(message = "Is required a Session Token") {
+		super(message);
+	}
+}
 
-
-export default function sessions(config, JWT_SECRET = "i'm not secret") {
+export function sessions(config, JWT_SECRET = "i'm not secret") {
 	const token_max_age = config?.defaults?.token_age ?? sessions.token_max_age;
 	const reflesh_after = config?.defaults?.reflesh ?? sessions.reflesh_after;
 	console.log(`[DEFAULTS] token_max_age = ${token_max_age}`);
@@ -50,8 +84,9 @@ export default function sessions(config, JWT_SECRET = "i'm not secret") {
 	if (JWT_SECRET == "i'm not secret")
 		console.warn("The key provied is not secret!");
 	function update_token(req, res) {
-		if(sanatize_token(req, res))
-			return true;
+		let localerror;
+		if(localerror = sanatize_token(req, res))
+			return localerror;
 		const data = req.session_data;
 		const token = {
 			user: data.username,
@@ -70,16 +105,18 @@ export default function sessions(config, JWT_SECRET = "i'm not secret") {
 		res.cookie("auth-token", cookie, {sameSite: true, maxAge: token_max_age * 1000 });
 	}
 	function sanatize_token(req, res) {
+		console.log("Request:", req)
 		if(!req.session_data) // no session data
-			return true;
+			return new TokenNeeded();
+		console.log("session data:", req.session_data);
 		const data = req.session_data
 		// validate user's role
 		if(!validate_roles(data.groupname)) 
-			return true;
+			return new InvalidGroup();
 		// sanatize the username
 		let username = sane_username(data.username ?? "");
 		if(!username) // invalid username
-			return true;
+			return new InvalidName();
 		// calculates the expiration date
 		data.maxAge = get_expiration(token_max_age);
 		data.reflesh = data.reflesh ?? calc_reflesh(reflesh_after);
@@ -91,19 +128,18 @@ export default function sessions(config, JWT_SECRET = "i'm not secret") {
 		console.log(`authetication token: ${src_token}`);
 		// require a token
 		if(!src_token)
-			return true;
+			return new TokenNeeded();
 		// decrypt the token
 		let decrypted;
 		try {
 			decrypted = jwt.verify(src_token, JWT_SECRET);
 		} catch(err) {
-			return true;
+			return new SignatureError();
 		}
-		if(!decrypted)
-			return true;
+		if(typeof decrypted !== "object")
+			return new InvalidToken();
 		if(decrypted.maxAge < Date.now())
-			return true;
-		
+			return new TokenExpired();
 		const session_data = {
 			username: decrypted.user,
 			maxAge: decrypted.untl,
@@ -116,7 +152,6 @@ export default function sessions(config, JWT_SECRET = "i'm not secret") {
 		console.log(`reflesh = ${Date(session_data.reflesh)}`);
 		console.log(`maxAge = ${Date(session_data.maxAge)}`);
 		console.log(session_data);
-		return false;
 	}
 	function ensure_flesh(req, res) {
 		const reflesh = req?.session_data?.reflesh;
@@ -128,11 +163,13 @@ export default function sessions(config, JWT_SECRET = "i'm not secret") {
 			if(reflesh < now)
 				return update_token(req, res);
 		}
-		return true;
+		//return new SessionError(); 
+		return Error("invalid reflesh");
 	}
 	function inject_flesh(req, res) {
-		if(inject_cookie(req, res)) 
-			return true;
+		let localerror;
+		if(localerror = inject_cookie(req, res)) 
+			return localerror;
 		return ensure_flesh(req, res);
 	}
 	this.ensure_flesh = ensure_flesh;
@@ -142,3 +179,4 @@ export default function sessions(config, JWT_SECRET = "i'm not secret") {
 }
 sessions.token_max_age = 300; // seconds (default time)
 sessions.reflesh_after = 15; // seconds (default time)
+export default sessions;

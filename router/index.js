@@ -3,7 +3,7 @@ import cookieParser from "cookie-parser";
 import path from "node:path";
 
 import express from "./private_router.js";
-import sessions from "./sessions.js";
+import * as sessions from "./sessions.js";
 // inject the envoriment variables
 dotenv.config();
 // create the main router
@@ -15,7 +15,15 @@ app.use(cookieParser());
 // parse application/x-www-urlencoded-form
 app.use(express.urlencoded({extended:true}));
 
-sessions.prototype.fetch_token = function(req, res) {
+
+export class LogoutFirst extends sessions.SessionError {
+	constructor() {
+		super("The user should disconnect the previuos account first")
+	}
+}
+sessions.sessions.prototype.fetch_token = function(req, res) {
+	/*if(req.session_data)
+		return new LogoutFirst();*/
 	const adress = req.ip;
 	const groupname = req.body?.role ?? "client";
 	const username = req.body?.user;
@@ -23,23 +31,22 @@ sessions.prototype.fetch_token = function(req, res) {
 	req.session_data = {
 		username, groupname, adress, config,
 	}
-	if(this.update_token(req, res)) {
-		res.redirect(401, "/login");
-		return true;
-	}
-	return false;
+	return this.update_token(req, res);
 }
-
-const sessions_handler = new sessions({
+app.use(function(req, res, next){
+	let localerror;
+	if(localerror = sessions_handler.inject_flesh(req, res)) {
+		console.log("Cannot Inject Token:", localerror.message);
+	};
+	next();
+});
+const sessions_handler = new sessions.sessions({
 	defaults: {
 		reflesh: true,
 	}
 });
 
-app.use(function(req, res, next){
-	sessions_handler.inject_flesh(req, res);
-	next();
-});
+
 
 // homepage is login when user is not already logged in
 app.get("/", function(req, res){
@@ -53,6 +60,7 @@ app.get("/", function(req, res){
 const default_login_files = path.resolve("public");
 
 export function setupLogin(public_files = default_login_files) {
+	let localerror;
 	const login_files = public_files + "/login"
 	console.log(`login files path: ${login_files}`);
 	app.use("/login", express.static(login_files));
@@ -62,10 +70,12 @@ export function setupLogin(public_files = default_login_files) {
 	});
 	// authetication
 	app.post("/login", function(req, res){
-		if(!sessions_handler.fetch_token(req, res)) {
-			res.redirect("/session");
-		} else {
+		if(localerror = sessions_handler.fetch_token(req, res)) {
+			console.log("Cannot do login:", localerror.message);
 			res.redirect("/invalid");
+		} else {
+			res.redirect("/session");
+			
 		}
 	});
 }
@@ -84,3 +94,17 @@ const PORT = process.env.LOCAL_PORT || 9001
 const HOST = process.env.LOCAL_HOST || "127.0.0.1"
 console.log(`Stating at ${HOST}:${PORT}`)
 app.listen(PORT, HOST);
+/*
+function login(user, pass, role = "client") {
+	const uri_pass = encodeURI(pass);
+	const uri_user = encodeURI(user);
+	const uri_role = encodeURI(role);
+	fetch("/login", {
+		method: "POST", 
+		headers: { 
+			"Content-Type": "application/x-www-form-urlencoded" 
+		}, 
+		body: `user=${uri_pass}&pass=${uri_user}&role=${uri_role}`
+	});
+}
+*/
