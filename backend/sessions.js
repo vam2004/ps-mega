@@ -105,7 +105,7 @@ export function sessions(config, JWT_SECRET = "i'm not secret") {
 		res.cookie("auth-token", cookie, {sameSite: true, maxAge: token_max_age * 1000 });
 	}
 	function sanatize_token(req, res) {
-		console.log("Request:", req)
+		//console.log("Request:", req)
 		if(!req.session_data) // no session data
 			return new TokenNeeded();
 		console.log("session data:", req.session_data);
