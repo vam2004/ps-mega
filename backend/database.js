@@ -84,13 +84,21 @@ export class promisefySqlite {
 		});
 	}
 }
+export function create_unblocker(seconds) {
+	return function(user){
+		const now = Date.now();
+		const last_try = user.last_try.getTime();
+		const elapsed = now - last_try
+		return elapsed >= seconds * 1000;
+	}
+}
 function Helpers(database, config) {
 	const global_salt = config?.global_salt ?? "i'm not secret";
 	const hmac_name = config?.innerhasher ?? "sha256";
 	const asyncdb = new promisefySqlite(database);
 	this.encode_date = config?.date_encoder ?? (time => time.toISOString());
 	this.decode_date = config?.date_decoder ?? (time => new Date(time));
-	this.userblocked = config?.on_userblocked ?? (user => false);
+	const userblocked = config?.on_userblocked ?? (user => false);
 	const MAX_TRIES = config?.max_auth_tries ?? NON_BLOCKING_AUTH;
 	
 	const decode_date = this.decode_date;
@@ -101,8 +109,12 @@ function Helpers(database, config) {
 		this.hashpass = row.hashpass;
 		this.tries = row.tries;
 		this.last_try = decode_date(row.last_try);
+		this.config = config;
 		//this.__debug__ = row;
-		console.log("[DEBUG] fetched user from database:", row);
+		console.log("[DEBUG] fetched user from database:", DebugAux.pretty_row(row));
+	}
+	row_spec.prototype.pretty = function(){
+		return DebugAux.pretty_row(this);
 	}
 	function innerhasher(data, encoding) {
 		const hasher = libcrypto.createHmac(hmac_name, global_salt)
@@ -128,7 +140,7 @@ function Helpers(database, config) {
 	}
 	function clear_tries(hashname) {
 		const query = "UPDATE main SET tries = 0 WHERE hashname = ?";
-		return asyncdb.exec(query, hashname);
+		return asyncdb.run(query, hashname);
 	}
 	function compare_pass(localpass, source) {
 		const hashpass = innerhasher(source);
@@ -143,15 +155,17 @@ function Helpers(database, config) {
 		}
 		return true;
 	}
-	function ensure_unblocked(user) {
-		console.log("Analizing user:", user);
-		return new Promise(function(res, rej) {
+	function ensure_unblocked(chain) {
+		return chain.then(function(user) {
+			//console.log("Analizing user:", user.pretty());
 			if(MAX_TRIES === NON_BLOCKING_AUTH || user.tries < MAX_TRIES) {
-				res(user);
+				return Promise.resolve(user);
 			} else if(userblocked(user)) {
-				clear_tries(user.hashname).then(res);
+				return clear_tries(user.hashname).then(function(){
+					return Promise.resolve(user);
+				});
 			} else {
-				rej(new UserIsBlocked());
+				return Promise.reject(new UserIsBlocked());
 			} 
 		});
 	}
@@ -162,8 +176,13 @@ function Helpers(database, config) {
 	this.get_user = get_user;
 	this.ensure_affected = ensure_affected;
 	this.asyncdb = asyncdb;
+	this.ensure_unblocked = ensure_unblocked;
 }
-
+export function ensure_buffer(src) {
+	if(typeof src === "string")
+		return libbuffer.Buffer.from(src, "utf-8");
+	return src;
+}
 export class DebugAux {
 	static hex_buffer(buffer) {
 		var res = [];
@@ -178,14 +197,18 @@ export class DebugAux {
 			if(err != null) { 
 				console.log(new SQLInternalError(err)); 
 			} else if(row) { 
-				console.log({
-					username: row.hashname.toString(),
-					password: DebugAux.hex_buffer(row.hashpass),
-					last_try: row.last_try,
-					tries: row.tries,
-				});
+				console.log(DebugAux.pretty_row(row));
 			}
 		});
+	}
+	static pretty_row(row) {
+		return {
+			username: row.hashname.toString(),
+			userpass: DebugAux.hex_buffer(row.hashpass),
+			last_try: row.last_try,
+			tries: row.tries,
+			config: row.config,
+		}
 	}
 }
 
@@ -193,17 +216,19 @@ export function LoginDB(database, config) {
 	const helpers = new Helpers(database, config);
 	const asyncdb = helpers.asyncdb;
 	function atomic_auth(hashname, hashpass) {
-		return helpers.get_user(hashname).then(helpers.ensure_unblocked).then(function(user){
-			if(!helpers.compare_pass(user.hashpass, hashpass)) {
-				return helpers.inclease_tries(hashname).then(() => Promise.reject(new InvalidPassword()));
+		let viewname = ensure_buffer(hashname);
+		let viewpass = ensure_buffer(hashpass);
+		return helpers.ensure_unblocked(helpers.get_user(viewname)).then(function(user){
+			if(!helpers.compare_pass(user.hashpass, viewpass)) {
+				return helpers.inclease_tries(viewname).then(() => Promise.reject(new InvalidPassword()));
 			}
 			return Promise.resolve();
 		});
 	}
-	function add(hashname, hashpass) {
-		const query = "INSERT OR ABORT INTO main VALUES (?, ?, 0, ?)";
+	function add(hashname, hashpass, config) {
+		const query = "INSERT OR ABORT INTO main VALUES (?, ?, 0, ?, ?)";
 		const now = helpers.encode_date(new Date());
-		return asyncdb.run(query, hashname, helpers.innerhasher(hashpass), now).catch(function(error){
+		return asyncdb.run(query, hashname, helpers.innerhasher(hashpass), now, config).catch(function(error){
 			var handled = error;
 			if(error instanceof SQLInternalError && error.sql_error.code === "SQLITE_CONSTRAINT")
 				handled = new UserAlreadyExists();
@@ -229,7 +254,7 @@ export function LoginDB(database, config) {
 	}
 	function create_schema() {
 		const query = `CREATE TABLE IF NOT EXISTS main 
-			(hashname BLOB PRIMARY KEY, hashpass BLOB, tries INT, last_try STRING)`;
+			(hashname BLOB PRIMARY KEY, hashpass BLOB, tries INT, last_try STRING, config STRING)`;
 		return asyncdb.exec(query);
 	}
 	this.remove = remove;
@@ -237,10 +262,10 @@ export function LoginDB(database, config) {
 	this.create_schema = create_schema; 
 	this.auth = atomic_auth;
 }
-
-
-
+export default LoginDB;
 const raw_db = new sqlite.Database(':memory:');
+/* ======== TESTS ========
+
 
 async function test_promisefy() {
 	const nxt_db = new promisefySqlite(raw_db);
@@ -285,4 +310,5 @@ async function test_login() {
 	await expected_fail(db.remove(name_1, pass_1), new UserNotExists());
 }
 //test_promisefy()
-test_login();
+//test_login();
+*/

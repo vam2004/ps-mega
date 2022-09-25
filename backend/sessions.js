@@ -75,6 +75,17 @@ export class TokenNeeded extends SessionError {
 		super(message);
 	}
 }
+export class AuthError extends SessionError {
+	constructor(error) {
+		super("Authentication Failed");
+		this.auth_error = error;
+	}
+}
+export class LogoutFirst extends SessionError {
+	constructor(username) {
+		super(`The user "${username}" is already connected`);
+	}
+}
 
 export function sessions(config, JWT_SECRET = "i'm not secret") {
 	const token_max_age = config?.defaults?.token_age ?? sessions.token_max_age;
