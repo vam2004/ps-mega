@@ -6,12 +6,13 @@
         <div class="card-header">
           <span>Bem-vindo ao MegaBank!</span>
         </div>
-        <form>
-          <input type="text" placeholder="Insira o seu CPF" />
-          <input type="password" placeholder="Insira a sua senha" />
-          <router-link to="/home">
-            <input id="button" type="submit" value="Login" />
-          </router-link>
+        <form >
+          <input id="input-username" type="text" placeholder="Insira o seu CPF" />
+          <input id="input-password" type="password" placeholder="Insira a sua senha" />
+		  <input id="button" type="submit" value="Login" @click="login"/>
+          <!--<router-link to="/home">
+            
+          </router-link>-->
         </form>
       </div>
       <div class="footer">
@@ -27,9 +28,46 @@
   </div>
 </template>
 
+
 <script>
+
 export default {
-  nome: "LoginForm",
+  methods: {
+	login(evt) {
+		evt.preventDefault();
+		const pass = document.querySelector("#input-password")?.value;
+		const user = document.querySelector("#input-username")?.value;
+		const role = "client";
+		const uri_pass = encodeURI(pass);
+		const uri_user = encodeURI(user);
+		const uri_role = encodeURI(role);
+		const that = this;
+		const data = `user=${uri_user}&pass=${uri_pass}&role=${uri_role}`;
+		console.log(data)
+		fetch("http://127.0.0.1:9001/login", {
+			method: "POST", 
+			headers: { 
+				"Content-Type": "application/x-www-form-urlencoded"				
+			}, 
+			credentials: 'include',
+			body: data
+		}).then(res => res.json()).then(function(obj){
+			console.log(obj)
+			switch(obj.action) {
+				case "sucess":
+					that.$router.push({ path: "/home" });
+					break;
+				case "error":
+					alert("Usuário ou senha invalidos");
+					break;
+				case "redirect":
+					alert("Dejesa mesmo sair da sessão anterior?");
+					break;
+			}
+			
+		});
+	}
+  }
 };
 </script>
 
