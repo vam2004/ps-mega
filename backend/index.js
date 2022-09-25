@@ -2,7 +2,7 @@ import * as dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import path from "node:path";
 import sqlite from "sqlite3";
-import * as database from "./database.js";
+import * as database from "./auth.js";
 import express from "./private_router.js";
 import * as sessions from "./sessions.js";
 // inject the envoriment variables

@@ -1,5 +1,5 @@
 import sqlite from "sqlite3";
-import * as lib from "../database.js";
+import * as lib from "../auth.js";
 import libbuffer from "node:buffer";
 const logins = new lib.LoginDB(new sqlite.Database("logins_database.db"));
 const username = process.argv[2];
