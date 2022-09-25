@@ -2,14 +2,41 @@ import sqlite from "sqlite3";
 import libcrypto from "node:crypto";
 import libbuffer from "node:buffer";
 // errors
-export class UserAlreadyExists extends Error { }
-export class UserNotExists extends Error { }
-export class PasswordExperied extends Error { }
-export class UserIsBlocked extends Error { }
-export class AuthFailed extends Error { }
+export class DatabaseError extends Error {
+	constructor(message = "A error was found while managing the database") {
+		super(message)
+	}
+}
+export class UserAlreadyExists extends DatabaseError { 
+	constructor(message = "The user already exists") {
+		super(message)
+	}
+}
+export class UserNotExists extends DatabaseError {
+	constructor(message = "The user does not exists") {
+		super(message)
+	}
+}
+export class PasswordExperied extends DatabaseError {
+	constructor(message = "The password was expired") {
+		super(message);
+	}
+}
+export class UserIsBlocked extends DatabaseError {
+	constructor(message = "The user is blocked") {
+		super(message);
+	}
+}
+
+export class InvalidPassword extends DatabaseError {
+	constructor(message = "The password does not match") {
+		super(message);
+	}
+}
 // internal sql error
-export class SQLInternalError extends Error { 
+export class SQLInternalError extends DatabaseError { 
 	constructor(err) {
+		super("A Internal Error was found while fetching the database");
 		this.sql_error = err;
 	}
 }
@@ -32,8 +59,15 @@ export class promisefySqlite {
 	}
 	run(query, ...params) {
 		return this.as_callback(query, params, function(){
-			this.database.get(this.query, ...this.params);
+			this.database.run(this.query, ...this.params);
 		}, true);
+	}
+	each(query, ...params) {
+		if(params.length === 0 || typeof params[params.length - 1] !== 'function')
+			return Promise.reject(Error("The last argument must be a function"));
+		return this.as_callback(query, params, function(){
+			this.database.each(this.query, ...this.params);
+		});
 	}
 	as_callback(query, params, operation, allow_this = false) {
 		const database = this.database;
@@ -51,19 +85,30 @@ export class promisefySqlite {
 	}
 }
 function Helpers(database, config) {
-	function create_hasher(hashername, global_salt) {
 	const global_salt = config?.global_salt ?? "i'm not secret";
 	const hmac_name = config?.innerhasher ?? "sha256";
+	const asyncdb = new promisefySqlite(database);
 	this.encode_date = config?.date_encoder ?? (time => time.toISOString());
 	this.decode_date = config?.date_decoder ?? (time => new Date(time));
 	this.userblocked = config?.on_userblocked ?? (user => false);
 	const MAX_TRIES = config?.max_auth_tries ?? NON_BLOCKING_AUTH;
 	
+	const decode_date = this.decode_date;
+	const encode_date = this.encode_date;
+	
+	function row_spec(row) {
+		this.hashname = row.hashname;
+		this.hashpass = row.hashpass;
+		this.tries = row.tries;
+		this.last_try = decode_date(row.last_try);
+		//this.__debug__ = row;
+		console.log("[DEBUG] fetched user from database:", row);
+	}
 	function innerhasher(data, encoding) {
 		const hasher = libcrypto.createHmac(hmac_name, global_salt)
 		return hasher.update(data).digest(encoding);
 	}
-	function ensure_affected(row) {
+	function ensure_affected(row, that) {
 		if(row === undefined) {
 			return Promise.reject(new UserNotExists())
 		}
@@ -72,19 +117,23 @@ function Helpers(database, config) {
 	function get_user(hashname) {
 		const query = "SELECT * FROM main WHERE hashname = ?";
 		return asyncdb.get(query, hashname).then(ensure_affected)
-			.then(row => new UserRow(row, decode_date));
+			.then(row => new row_spec(row));
 	}
 	function inclease_tries(hashname) {
 		const now = encode_date(new Date());
-		const query = "UPDATE main SET tries = tries + 1, last_try = ? WHERE username = ?";
-		return asyncdb.exec(query, now, hashname);
+		const debug_db = database;
+		const query = `UPDATE main SET tries = tries + 1, last_try = ? 
+					WHERE hashname = ?`;
+		return asyncdb.run(query, now, hashname);
 	}
 	function clear_tries(hashname) {
-		const query = "UPDATE main SET tries = 0 WHERE username = ?";
+		const query = "UPDATE main SET tries = 0 WHERE hashname = ?";
 		return asyncdb.exec(query, hashname);
 	}
 	function compare_pass(localpass, source) {
 		const hashpass = innerhasher(source);
+		console.log(`[PASSWORD] provided = ${DebugAux.hex_buffer(hashpass)}`);
+		console.log(`[PASSWORD] expected = ${DebugAux.hex_buffer(localpass)}`);
 		const length = localpass.length;
 		if(length !== hashpass.length)
 			return false;
@@ -112,29 +161,70 @@ function Helpers(database, config) {
 	this.compare_pass = compare_pass;
 	this.get_user = get_user;
 	this.ensure_affected = ensure_affected;
+	this.asyncdb = asyncdb;
 }
 
+export class DebugAux {
+	static hex_buffer(buffer) {
+		var res = [];
+		for(let i = 0; i < buffer.length; i ++) {
+			res.push(buffer[i].toString(16).padStart(2, '0'))
+		}
+		return res.join("");
+	}
+	static show_database(database) {
+		const asyncdb = new promisefySqlite(database);
+		return asyncdb.each("SELECT * FROM main", function(err, row){
+			if(err != null) { 
+				console.log(new SQLInternalError(err)); 
+			} else if(row) { 
+				console.log({
+					username: row.hashname.toString(),
+					password: DebugAux.hex_buffer(row.hashpass),
+					last_try: row.last_try,
+					tries: row.tries,
+				});
+			}
+		});
+	}
+}
 
 export function LoginDB(database, config) {
-	const asyncdb = new promisefySqlite(database);
-	const helpers = new Helpers();
+	const helpers = new Helpers(database, config);
+	const asyncdb = helpers.asyncdb;
 	function atomic_auth(hashname, hashpass) {
-		get_user(hashname).then(helpers.ensure_unblocked).then(function(user){
-			if(!cmp_pass(user.hashpass, hashpass)) {
-				return inclease_tries().then(() => Promise.reject(new AuthFailed()));
+		return helpers.get_user(hashname).then(helpers.ensure_unblocked).then(function(user){
+			if(!helpers.compare_pass(user.hashpass, hashpass)) {
+				return helpers.inclease_tries(hashname).then(() => Promise.reject(new InvalidPassword()));
 			}
 			return Promise.resolve();
 		});
 	}
 	function add(hashname, hashpass) {
 		const query = "INSERT OR ABORT INTO main VALUES (?, ?, 0, ?)";
-		const now = encode_date(new Date());
-		return asyncdb.run(query, hashname, helpers.innerhasher(hashpass), now);
+		const now = helpers.encode_date(new Date());
+		return asyncdb.run(query, hashname, helpers.innerhasher(hashpass), now).catch(function(error){
+			var handled = error;
+			if(error instanceof SQLInternalError && error.sql_error.code === "SQLITE_CONSTRAINT")
+				handled = new UserAlreadyExists();
+			return Promise.reject(handled);
+		});
 	}
 	function remove(hashname, hashpass) {
-		const query = "DELETE FROM main WHERE main.hashname = ?";
-		return auth(hashname, hashpass).then(function(){
-			return asyncdb.get(query, hashname).then(helpers.ensure_affected);
+		const query = "DELETE FROM main WHERE hashname = ?";
+		const noop = (() => undefined);
+		return atomic_auth(hashname, hashpass).then(function(){
+			return new Promise(function(res, rej) {
+				database.run(query, hashname, function(err, row){
+					if(err !== null) {
+						rej(new SQLInternalError(err));
+					} else if (this.changes < 1) {
+						rej(new UserNotExists());
+					} else {
+						res();
+					}
+				});
+			});
 		})
 	}
 	function create_schema() {
@@ -145,7 +235,7 @@ export function LoginDB(database, config) {
 	this.remove = remove;
 	this.add = add;
 	this.create_schema = create_schema; 
-	this.atomic_auth = atomic_auth;
+	this.auth = atomic_auth;
 }
 
 
@@ -163,13 +253,36 @@ async function test_promisefy() {
 	await nxt_db.get("SELECT * FROM blobfy");
 }
 async function test_login() {
+	async function expected_fail(chain, expected) {
+		var error = await chain.catch(err => err);
+		if(!(error instanceof DatabaseError)){
+			console.log(error);
+			throw new Error("Assertion Error");
+		}
+			
+		if(error.message !== expected.message) {
+			console.log("[ASSERTION] Expected a error:", expected.message);
+			console.log("[ASSERTION] But got the error:", error);
+			throw new Error("Assertion Error");
+		}
+	}
 	const db = new LoginDB(raw_db, {});
-	const hashname = libbuffer.Buffer.from("hello_123", 'utf8');
-	const hashpass = libbuffer.Buffer.from("pass_123", 'utf8');
+	const name_1 = libbuffer.Buffer.from("hello_123", 'utf8');
+	const name_2 = libbuffer.Buffer.from("hello_1234", 'utf8');
+	const pass_1 = libbuffer.Buffer.from("pass_123", 'utf8');
+	const pass_2 = libbuffer.Buffer.from("pass_1234", 'utf8');
+	const asyncdb = new promisefySqlite(raw_db);
 	await db.create_schema();
-	await db.add(hashname, hashpass);
-	await db.atomic_auth(hashname, hashpass);
-	db.atomic_auth(hashname, libbuffer.Buffer.from("pass_123", 'utf8'))
+	await db.add(name_1, pass_1);
+	await db.add(name_2, pass_1);
+	await db.auth(name_1, pass_1);
+	await DebugAux.show_database(raw_db);
+	await expected_fail(db.auth(name_1, name_2), new InvalidPassword())
+	await expected_fail(db.remove(name_1, pass_2), new InvalidPassword());
+	await expected_fail(db.add(name_1, pass_2), new UserAlreadyExists());
+	await DebugAux.show_database(raw_db);
+	await db.remove(name_1, pass_1);
+	await expected_fail(db.remove(name_1, pass_1), new UserNotExists());
 }
 //test_promisefy()
 test_login();
