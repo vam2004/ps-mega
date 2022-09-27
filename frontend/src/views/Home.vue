@@ -20,7 +20,7 @@
           <br />
           <img class="list" src="Img/line.png" alt="list" />
           <div id="user">
-            <img id="icon " src="Img/icon.png" alt="icon" />
+            <img id="icon" src="Img/icon.png" alt="icon" />
             <h5>Bem-Vindo de volta</h5>
             <h5>Angelo</h5>
           </div>
@@ -131,7 +131,7 @@ header {
   flex-flow: column wrap;
 }
 #icon {
-  width: 50rem;
+  /*width: 50rem;*/
   margin: 3px;
 }
 .log-out {
