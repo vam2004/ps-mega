@@ -28,12 +28,13 @@ sessions.sessions.prototype.fetch_token = function(req, res) {
 	const username = req.body?.user;
 	const userpass = req.body?.pass;
 	const config = req.session_data?.config;
+	req.annonymuos_data = {
+		username, groupname, adress, config
+	}
 	const that = this;
 	return db.auth(username, userpass).then(function(){
 		let localerror;
-		req.session_data = {
-			username, groupname, adress, config
-		}
+		req.session_data = req.annonymuos_data;
 		if(localerror = that.update_token(req, res))
 			return Promise.reject(localerror);
 		return Promise.resolve();
@@ -83,13 +84,14 @@ export function setupLogin(public_files = default_login_files) {
 	// authetication
 	app.post("/login", function(req, res){
 		if(req.session_data !== undefined) {
-			res.redirect("/redirecting");
+			res.send({ action: "redirect"});
 		} else {
 			return sessions_handler.fetch_token(req, res).then(function(){
-				res.redirect("/session");
+				res.send({ action: "sucess" });
 			}).catch(function(err){
-				console.log("Cannot do login:", err.message);
-				res.redirect("/invalid");
+				console.log("Failed to login: ", req.annonymuos_data);
+				console.log("Because:", err.message);
+				res.send({ action: "error" });
 			});
 		}
 	});
