@@ -126,9 +126,13 @@ header {
   height: 10rem;
   border: 2px solid #f4f7f6;
   border-radius: 35px;
+  display: flex;
+  align-items: center;
+  flex-flow: column wrap;
 }
 #icon {
   width: 50rem;
+  margin: 3px;
 }
 .log-out {
   margin-top: 2rem;
