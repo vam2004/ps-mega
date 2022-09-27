@@ -19,32 +19,47 @@ app.use(express.urlencoded({extended:true}));
 const db = new database.LoginDB(new sqlite.Database("logins_database.db"));
 
 
-
-sessions.sessions.prototype.fetch_token = function(req, res) {
-	/*if(req.session_data)
-		return new LogoutFirst();*/
+function injectAnnonymuosData(req, res){
 	const adress = req.ip;
 	const groupname = req.body?.role ?? "client";
 	const username = req.body?.user;
-	const userpass = req.body?.pass;
+	const logout = req.body?.force;
 	const config = req.session_data?.config;
 	req.annonymuos_data = {
-		username, groupname, adress, config
+		config, logout, session: {
+			username, groupname, adress
+		}
 	}
+}
+export class AnnonymuosDataNeeded extends Error {
+	constructor() {
+		super("req.session is undefined")
+	}
+}
+sessions.sessions.prototype.fetch_token = function(req, res) {
+	const userpass = req.body?.pass;
+	if(!req.annonymuos_data?.session)
+		return Promise.reject(AnnonymuosDataNeeded());
+	const session = req.annonymuos_data?.session;
 	const that = this;
-	return db.auth(username, userpass).then(function(){
+	return db.auth(session.username, userpass, session.groupname).then(function(){
 		let localerror;
-		req.session_data = req.annonymuos_data;
+		req.session_data = session;
 		if(localerror = that.update_token(req, res))
 			return Promise.reject(localerror);
 		return Promise.resolve();
 	}).catch(function(err){
-		return Promise.reject(new sessions.AuthError(err));
+		return Promise.reject(sessions.wrapError(err));
 	});
 }
 app.use(function(req, res, next){
 	let localerror;
-	if(localerror = sessions_handler.inject_flesh(req, res)) {
+	if(req.path.startsWith("/login")) {
+		sessions_handler.inject_cookie(req, res);
+	} else {
+		localerror = sessions_handler.inject_flesh(req, res)
+	} 
+	if(localerror) {
 		console.log("Cannot Inject Token:", localerror.message);
 	};
 	next();
@@ -58,52 +73,97 @@ const sessions_handler = new sessions.sessions({
 
 
 // homepage is login when user is not already logged in
-app.get("/", function(req, res){
-	if(!req.session_data) {
-		res.redirect("/login");
-	} else {
-		res.redirect("/session");
-	}
-});
 
-const default_login_files = path.resolve("public");
 
-export function setupLogin(public_files = default_login_files) {
-	
-	const login_files = public_files + "/login"
-	console.log(`login files path: ${login_files}`);
-	app.use("/login", express.static(login_files));
-	// send "login.html"
-	app.get("/login", function(req, res){ 
-		if(req.session_data !== undefined) {
-			res.redirect("/redirecting");
+function setup_frontend() {
+	const pwd = path.resolve("public/login"); 
+	const frontend = express.Router();
+	frontend.get("/", function(req, res){
+		if(!req.session_data) {
+			res.redirect("/login");
 		} else {
-			res.sendFile(login_files + "/login.html");
+			res.redirect("/login/logged");
+		}
+	});
+	// static files
+	frontend.use("/login", express.static(pwd));
+	// send static "/login"
+	frontend.get("/login", function(req, res){ 
+		if(req.session_data !== undefined) {
+			res.redirect("/logged");
+		} else {
+			res.sendFile(pwd + "/login.html");
 		}
 	});
 	// authetication
-	app.post("/login", function(req, res){
-		if(req.session_data !== undefined) {
-			res.send({ action: "redirect"});
-		} else {
-			return sessions_handler.fetch_token(req, res).then(function(){
-				res.send({ action: "sucess" });
-			}).catch(function(err){
-				console.log("Failed to login: ", req.annonymuos_data);
-				console.log("Because:", err.message);
-				res.send({ action: "error" });
-			});
-		}
+	frontend.post("/login", async function(req, res){
+		const parsed = await parseLogin(req, res);
+		if(parsed.status === "sucess")
+			return res.redirect("/home");
+		if(parsed.status === "warning" && parsed.action === "logout")
+			return res.redirect("/logged");
+		if(parsed.status === "error")
+			return res.redirect(`/login?error=${parsed.error}`);
+		res.redirect("/login?error=unknown")
+	});
+	frontend.post("/logout", function(req, res){
+		res.clearCookie('auth-token');
+		return res.send({ action: "sucess" });
+	});
+	frontend.get("/logout", function(req, res){
+		res.clearCookie('auth-token');
+		return res.redirect("/login");
+	});
+	return frontend;
+}
+function parseAuthError(e) {
+	console.log(e);
+	if(e instanceof sessions.AuthError)
+		return database.parseError(e.auth_error);
+	if(e instanceof sessions.SessionError)
+		return e.constructor.name;
+	return "AuthUnknownError";
+}
+function parseLogin(req, res){
+	injectAnnonymuosData(req, res);
+	if(req.session_data !== undefined && !req.annonymuos_data?.logout) {
+		return { status: "warning", action: "logout"};
+	} 
+	return sessions_handler.fetch_token(req, res).then(function(){
+		return { status: "sucess" };
+	}).catch(function(e){
+		const logged = req.session_data ? true : false;
+		const error = parseAuthError(e);
+		return { status: "error", error, logged};
 	});
 }
-
-setupLogin(path.resolve("public"));
-
+function setup_backend() {
+	const backend = express.Router();
+	backend.post("/login", function(req, res){
+		res.send(parseLogin(req, res));
+	});
+	backend.post("/logout", function(req, res){
+		res.clearCookie('auth-token');
+		return res.send({ action: "sucess" });
+	});
+	return backend;
+}
+app.use(setup_frontend());
+app.use("/fetch", setup_backend());
 const private_routes = app.acess_control();
 
 
-private_routes.get("/session", function(req, res){
-	res.send(`<h1>Hello ${req.session_data.groupname} "${req.session_data.username}"<h1>`);
+private_routes.get("/home", function(req, res){
+	res.send(
+`<html>
+	<head>
+		<meta charset="utf-8"/>
+	</head>
+	<body style="background-color: black; color: white;">
+		<h1>Hello ${req.session_data.groupname} "${req.session_data.username}"</h1>
+		<a href="/logout" style="font-size: 3em">logout</a>
+	</body>
+</html>`);
 	res.end();
 })
 

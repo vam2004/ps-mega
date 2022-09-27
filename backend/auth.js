@@ -2,19 +2,29 @@ import sqlite from "sqlite3";
 import libcrypto from "node:crypto";
 import libbuffer from "node:buffer";
 // errors
-export class DatabaseError extends Error {
+export function parseError(error) {
+	if(error instanceof CommonDatabaseError)
+		return error.constructor.name;
+	return "UnknownDatabaseError";
+}
+export class CommonDatabaseError extends Error {
+	constructor(message = "A error was found in database") {
+		super(message);
+	}
+}
+export class DatabaseError extends CommonDatabaseError {
 	constructor(message = "A error was found while managing the database") {
-		super(message)
+		super(message);
 	}
 }
 export class UserAlreadyExists extends DatabaseError { 
 	constructor(message = "The user already exists") {
-		super(message)
+		super(message);
 	}
 }
 export class UserNotExists extends DatabaseError {
 	constructor(message = "The user does not exists") {
-		super(message)
+		super(message);
 	}
 }
 export class PasswordExperied extends DatabaseError {
@@ -34,7 +44,7 @@ export class InvalidPassword extends DatabaseError {
 	}
 }
 // internal sql error
-export class SQLInternalError extends DatabaseError { 
+export class SQLInternalError extends CommonDatabaseError { 
 	constructor(err) {
 		super("A Internal Error was found while fetching the database");
 		this.sql_error = err;

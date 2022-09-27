@@ -86,6 +86,11 @@ export class LogoutFirst extends SessionError {
 		super(`The user "${username}" is already connected`);
 	}
 }
+export function wrapError(error) {
+	if(error instanceof SessionError)
+		return error;
+	return new AuthError(error);
+}
 
 export function sessions(config, JWT_SECRET = "i'm not secret") {
 	const token_max_age = config?.defaults?.token_age ?? sessions.token_max_age;
