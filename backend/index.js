@@ -18,33 +18,43 @@ app.use(express.urlencoded({extended:true}));
 
 const db = new database.LoginDB(new sqlite.Database("logins_database.db"));
 
-
-function injectAnnonymuosData(req, res){
+// inject the user provided data into request
+function injectAnnonymuosData(req, _res){
 	const adress = req.ip;
 	const groupname = req.body?.role ?? "client";
 	const username = req.body?.user;
 	const logout = req.body?.force;
 	const config = req.session_data?.config;
+	const userpass = req.body?.pass;
 	req.annonymuos_data = {
-		config, logout, session: {
+		config, logout, userpass, session: {
 			username, groupname, adress
 		}
 	}
 }
-export class AnnonymuosDataNeeded extends Error {
-	constructor() {
-		super("req.session is undefined")
-	}
-}
+
 sessions.sessions.prototype.fetch_token = function(req, res) {
-	const userpass = req.body?.pass;
-	if(!req.annonymuos_data?.session)
-		return Promise.reject(AnnonymuosDataNeeded());
-	const session = req.annonymuos_data?.session;
+	 // get the password from request
+	if(!req.annonymuos_data)
+		return Promise.reject(new sessions.AnnonymuosDataNeeded());
+	const _session = req.annonymuos_data.session; // get session
+	const username = _session.username; // get username
+	const groupname = _session.groupname; // get groupname
+	const userpass = req.annonymuos_data.userpass; // get password
+	/* 
+	* The objective is loggin -> session data needed
+	* Don't allow the username to be aliased to "" -> username needed
+	*/
+	if (typeof username !== "string") 
+		return Promise.reject(sessions.wrapError(new sessions.InvalidName()));
+	// aliasing 'this' under 'that'
 	const that = this;
-	return db.auth(session.username, userpass, session.groupname).then(function(){
+	// do autentication before authorizing
+	return db.auth(username, userpass, groupname).then(function(){
 		let localerror;
-		req.session_data = session;
+		if(req.session_data)
+			return Promise.reject(new sessions.LogoutFirst());
+		req.session_data = _session;
 		if(localerror = that.update_token(req, res))
 			return Promise.reject(localerror);
 		return Promise.resolve();
@@ -53,12 +63,7 @@ sessions.sessions.prototype.fetch_token = function(req, res) {
 	});
 }
 app.use(function(req, res, next){
-	let localerror;
-	if(req.path.startsWith("/login")) {
-		sessions_handler.inject_cookie(req, res);
-	} else {
-		localerror = sessions_handler.inject_flesh(req, res)
-	} 
+	let localerror = sessions_handler.inject_cookie(req, res);;
 	if(localerror) {
 		console.log("Cannot Inject Token:", localerror.message);
 	};
@@ -119,7 +124,8 @@ function setup_frontend() {
 function parseAuthError(e) {
 	console.log(e);
 	if(e instanceof sessions.AuthError)
-		return database.parseError(e.auth_error);
+		if(e instanceof database.CommonDatabaseError)
+			return database.parseError(e.auth_error);
 	if(e instanceof sessions.SessionError)
 		return e.constructor.name;
 	return "AuthUnknownError";
@@ -127,7 +133,7 @@ function parseAuthError(e) {
 function parseLogin(req, res){
 	injectAnnonymuosData(req, res);
 	if(req.session_data !== undefined && !req.annonymuos_data?.logout) {
-		return { status: "warning", action: "logout"};
+		return Promise.resolve({ status: "warning", action: "logout"});
 	} 
 	return sessions_handler.fetch_token(req, res).then(function(){
 		return { status: "sucess" };
@@ -139,12 +145,16 @@ function parseLogin(req, res){
 }
 function setup_backend() {
 	const backend = express.Router();
-	backend.post("/login", function(req, res){
-		res.send(parseLogin(req, res));
+	backend.post("/login", async function(req, res){
+		await parseLogin(req, res).then(function(body){
+			res.send(body);
+		});
+		//res.end();
 	});
 	backend.post("/logout", function(req, res){
 		res.clearCookie('auth-token');
-		return res.send({ action: "sucess" });
+		res.send({ action: "sucess" });
+		//res.end();
 	});
 	return backend;
 }
@@ -176,12 +186,12 @@ function login(user, pass, role = "client") {
 	const uri_pass = encodeURI(pass);
 	const uri_user = encodeURI(user);
 	const uri_role = encodeURI(role);
-	fetch("/login", {
+	return fetch("http://127.0.0.1:9001/fetch/login", {
 		method: "POST", 
 		headers: { 
 			"Content-Type": "application/x-www-form-urlencoded" 
 		}, 
-		body: `user=${uri_pass}&pass=${uri_user}&role=${uri_role}`
+		body: `user=${uri_user}&pass=${uri_pass}&role=${uri_role}`
 	});
 }
 */

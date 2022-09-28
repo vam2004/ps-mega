@@ -30,7 +30,6 @@
 
 
 <script>
-
 export default {
   methods: {
 	login(evt) {
@@ -44,7 +43,7 @@ export default {
 		const that = this;
 		const data = `user=${uri_user}&pass=${uri_pass}&role=${uri_role}`;
 		console.log(data)
-		fetch("http://127.0.0.1:9001/login", {
+		fetch("http://127.0.0.1:9001/fetch/login/", {
 			method: "POST", 
 			headers: { 
 				"Content-Type": "application/x-www-form-urlencoded"				
@@ -53,19 +52,18 @@ export default {
 			body: data
 		}).then(res => res.json()).then(function(obj){
 			console.log(obj)
-			switch(obj.action) {
+			switch(obj.status) {
 				case "sucess":
 					that.$router.push({ path: "/home" });
 					break;
 				case "error":
 					alert("Usuário ou senha invalidos");
 					break;
-				case "redirect":
-					alert("Dejesa mesmo sair da sessão anterior?");
+				case "warning":
+					alert('Dejesa mesmo sair da sessão anterior? <button onclick="fetch(\'http://127.0.0.1:9001/logout\').then(console.log)"></button>');
 					break;
 			}
-			
-		});
+		}).catch(err => console.log(err));
 	}
   }
 };

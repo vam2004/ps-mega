@@ -86,6 +86,11 @@ export class LogoutFirst extends SessionError {
 		super(`The user "${username}" is already connected`);
 	}
 }
+export class AnnonymuosDataNeeded extends SessionError {
+	constructor() {
+		super("req.session is undefined")
+	}
+}
 export function wrapError(error) {
 	if(error instanceof SessionError)
 		return error;
