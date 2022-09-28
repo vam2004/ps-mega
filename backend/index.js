@@ -116,7 +116,8 @@ function setup_frontend() {
 		return res.send({ action: "sucess" });
 	});
 	frontend.get("/logout", function(req, res){
-		res.clearCookie('auth-token');
+		if(req.session_data)
+			res.clearCookie('auth-token');
 		return res.redirect("/login");
 	});
 	return frontend;
@@ -149,12 +150,14 @@ function setup_backend() {
 		await parseLogin(req, res).then(function(body){
 			res.send(body);
 		});
-		//res.end();
 	});
 	backend.post("/logout", function(req, res){
-		res.clearCookie('auth-token');
-		res.send({ action: "sucess" });
-		//res.end();
+		if(req.session_data) {
+			res.clearCookie('auth-token');
+			res.send({ status: "sucess" });
+		} else {
+			res.send({ status: "no-data"})
+		}
 	});
 	return backend;
 }

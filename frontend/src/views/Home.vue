@@ -24,10 +24,12 @@
             <h5>Bem-Vindo de volta</h5>
             <h5>Angelo</h5>
           </div>
-          <router-link to="/" class="log-out">
-            <img id="sign-out-img" src="Img/sign-out.png" alt="sign-out" />
+          <!--<router-link to="/" class="log-out">-->
+		  <div class="log-out" v-on:click="logoff">
+			<img id="sign-out-img" src="Img/sign-out.png" alt="sign-out" />
             <h5 id="sign-out-text">Sign-out</h5>
-          </router-link>
+		  </div>
+          <!--</router-link>-->
         </div>
       </div>
       <div id="centro">
@@ -76,7 +78,27 @@
   </div>
 </template>
 
-<script></script>
+<script>
+export default {
+	methods: {
+		logoff(evt){
+			const that = this;
+			fetch("http://127.0.0.1:9001/fetch/logout", {
+				method: "POST", credentials: 'include', mode: "cors"
+			}).then(function(res){
+				return res.json();
+			}).then(function(res){
+				if(res.status === "sucess")
+					return that.$router.push({ path: "/" });
+				alert("Cannot Loggout!");
+			}).catch(function(err) {
+				console.log(err); 
+				alert("Check backend!");
+			});
+		}
+	}
+}
+</script>
 
 <style scoped>
 #fundo {
