@@ -7,7 +7,12 @@
           <span>Bem-vindo ao MegaBank!</span>
         </div>
         <form>
-          <input type="text" placeholder="Insira o seu CPF" />
+          <input
+            id="cpf-receive"
+            type="text"
+            placeholder="Insira o seu CPF"
+            autocomplete="off"
+          />
           <input type="password" placeholder="Insira a sua senha" />
           <router-link to="/home">
             <input id="button" type="submit" value="Login" />
@@ -22,7 +27,9 @@
 
     <!--Logo-->
     <div class="side-b">
-      <div></div>
+      <div>
+        <img id="logo" src="Img/logo.png" alt="logo" />
+      </div>
     </div>
   </div>
 </template>
@@ -184,5 +191,12 @@ form input::placeholder {
   text-decoration-line: underline;
 
   color: var(--cinza);
+}
+
+#logo {
+  transform: rotate(80deg);
+  margin-left: 70rem;
+  width: 20rem;
+  margin-top: 10rem;
 }
 </style>
