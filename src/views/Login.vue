@@ -195,8 +195,8 @@ form input::placeholder {
 
 #logo {
   transform: rotate(80deg);
-  margin-left: 70rem;
+  margin-left: 72rem;
   width: 20rem;
-  margin-top: 10rem;
+  margin-top: 25rem;
 }
 </style>
