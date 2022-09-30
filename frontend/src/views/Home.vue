@@ -540,6 +540,7 @@ header {
 #transferencia {
   margin-left: 10rem;
   margin-top: 7rem;
+  padding-top: 9rem;
   background-color: #d9d9d9;
   width: 30rem;
   height: 20rem;
