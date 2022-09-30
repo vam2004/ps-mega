@@ -353,7 +353,8 @@ function LoginHelpers(database, config) {
 	return {
 		innerhasher, inclease_tries, clear_tries, 
 		compare_pass, get_user, ensure_affected, 
-		asyncdb, ensure_unblocked
+		asyncdb, ensure_unblocked, encode_date, 
+		decode_date,
 	}
 }
 export function ensure_buffer(src) {
@@ -418,7 +419,11 @@ export function LoginDB(database, config) {
 		const oldpasswd = innerhasher(viewpass);
 		const query = "UPDATE main SET hashpass = ?3 WHERE hashpass = ?2 AND hashname = ?1"
 		return atomic_auth(viewname, viewpass, viewgroup).then(function(){
-			return asyndb.run(query, viewname, oldpasswd, newpasswd);
+			return asyndb.run(query, {
+				0: viewname, 
+				1: oldpasswd, 
+				2: newpasswd
+			});
 		})
 	}
 	this.remove = remove;
