@@ -127,7 +127,7 @@ function parseAuthError(e) {
 	if(e instanceof sessions.AuthError)
 		if(e instanceof database.CommonDatabaseError)
 			return database.parseError(e.auth_error);
-	if(e instanceof sessions.SessionError)
+	else if(e instanceof sessions.SessionError)
 		return e.constructor.name;
 	return "AuthUnknownError";
 }

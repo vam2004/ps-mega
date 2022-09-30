@@ -113,6 +113,37 @@ export class promisefySqlite {
 		}
 	}
 }
+export class DebugAux {
+	static hex_buffer(buffer) {
+		var res = [];
+		for(let i = 0; i < buffer.length; i ++) {
+			res.push(buffer[i].toString(16).padStart(2, '0'))
+		}
+		return res.join("");
+	}
+	static show_database(database) {
+		return DebugAux.unsafe_show_database(database, "main");
+	}
+	static unsafe_show_database(database, table = "main", _foreach = DebugAux.pretty_row) {
+		const asyncdb = new promisefySqlite(database);
+		return asyncdb.each(`SELECT * FROM ${table}`, function(err, row){
+			if(err != null) { 
+				console.log(new SQLInternalError(err)); 
+			} else if(row) { 
+				console.log(_foreach(row));
+			}
+		});
+	}
+	static pretty_row(row) {
+		return {
+			username: row.hashname.toString(),
+			userpass: DebugAux.hex_buffer(row.hashpass),
+			last_try: row.last_try,
+			tries: row.tries,
+			config: row.config,
+		}
+	}
+}
 /*
 export class AsyncAtomDatabase {
 	constructor(database) {
@@ -224,18 +255,51 @@ export function create_unblocker(seconds) {
 		return elapsed >= seconds * 1000;
 	}
 }
-function Helpers(database, config) {
+export function PublicHelpers() {
+	function ensure_affected(row) {
+		if(row === undefined) {
+			return Promise.reject(new UserNotExists());
+		}
+		return Promise.resolve(row);
+	}
+	function compare_buffer(s0, s1) {
+		const length = s0.length;
+		if(length !== s1.length)
+			return false;
+		for (let i = 0; i < length; i++) {
+			if(s0[i] !== s1[i])
+				return false;
+		}
+		return true;
+	}
+	return {
+		ensure_affected, compare_buffer
+	};
+}
+function HashsAndDate(config) {
 	const global_salt = config?.global_salt ?? "i'm not secret";
 	const hmac_name = config?.innerhasher ?? "sha256";
+	const encode_date = config?.date_encoder ?? (time => time.toISOString());
+	const decode_date = config?.date_decoder ?? (time => new Date(time));
+	function innerhasher(data, encoding) {
+		const hasher = libcrypto.createHmac(hmac_name, global_salt);
+		return hasher.update(data).digest(encoding);
+	}
+	return {
+		encode_date, decode_date, innerhasher
+	}
+}
+function LoginHelpers(database, config) {
+	const {
+		ensure_affected, compare_buffer
+	} = PublicHelpers();
+	const { 
+		encode_date, decode_date, innerhasher 
+	} = HashsAndDate(config);
 	const asyncdb = new promisefySqlite(database);
-	this.encode_date = config?.date_encoder ?? (time => time.toISOString());
-	this.decode_date = config?.date_decoder ?? (time => new Date(time));
 	const userblocked = config?.on_userblocked ?? (user => false);
 	const MAX_TRIES = config?.max_auth_tries ?? NON_BLOCKING_AUTH;
-	
-	const decode_date = this.decode_date;
-	const encode_date = this.encode_date;
-	
+		
 	function row_spec(row) {
 		this.hashname = row.hashname;
 		this.hashpass = row.hashpass;
@@ -248,16 +312,7 @@ function Helpers(database, config) {
 	row_spec.prototype.pretty = function(){
 		return DebugAux.pretty_row(this);
 	}
-	function innerhasher(data, encoding) {
-		const hasher = libcrypto.createHmac(hmac_name, global_salt)
-		return hasher.update(data).digest(encoding);
-	}
-	function ensure_affected(row, that) {
-		if(row === undefined) {
-			return Promise.reject(new UserNotExists())
-		}
-		return Promise.resolve(row);
-	}
+	
 	function get_user(hashname) {
 		const query = "SELECT * FROM main WHERE hashname = ?";
 		return asyncdb.get(query, hashname).then(ensure_affected)
@@ -274,18 +329,12 @@ function Helpers(database, config) {
 		const query = "UPDATE main SET tries = 0 WHERE hashname = ?";
 		return asyncdb.run(query, hashname);
 	}
+	
 	function compare_pass(localpass, source) {
 		const hashpass = innerhasher(source);
 		console.log(`[PASSWORD] provided = ${DebugAux.hex_buffer(hashpass)}`);
 		console.log(`[PASSWORD] expected = ${DebugAux.hex_buffer(localpass)}`);
-		const length = localpass.length;
-		if(length !== hashpass.length)
-			return false;
-		for (let i = 0; i < length; i++) {
-			if(hashpass[i] !== localpass[i])
-				return false;
-		}
-		return true;
+		return compare_buffer(localpass, hashpass);
 	}
 	function ensure_unblocked(chain) {
 		return chain.then(function(user) {
@@ -301,54 +350,21 @@ function Helpers(database, config) {
 			} 
 		});
 	}
-	this.innerhasher = innerhasher;
-	this.inclease_tries = inclease_tries;
-	this.clear_tries = clear_tries;
-	this.compare_pass = compare_pass;
-	this.get_user = get_user;
-	this.ensure_affected = ensure_affected;
-	this.asyncdb = asyncdb;
-	this.ensure_unblocked = ensure_unblocked;
+	return {
+		innerhasher, inclease_tries, clear_tries, 
+		compare_pass, get_user, ensure_affected, 
+		asyncdb, ensure_unblocked
+	}
 }
 export function ensure_buffer(src) {
 	if(typeof src === "string")
 		return libbuffer.Buffer.from(src, "utf-8");
 	return src;
 }
-export class DebugAux {
-	static hex_buffer(buffer) {
-		var res = [];
-		for(let i = 0; i < buffer.length; i ++) {
-			res.push(buffer[i].toString(16).padStart(2, '0'))
-		}
-		return res.join("");
-	}
-	static show_database(database) {
-		return DebugAux.unsafe_show_database(database, "main");
-	}
-	static unsafe_show_database(database, table = "main", _foreach = DebugAux.pretty_row) {
-		const asyncdb = new promisefySqlite(database);
-		return asyncdb.each(`SELECT * FROM ${table}`, function(err, row){
-			if(err != null) { 
-				console.log(new SQLInternalError(err)); 
-			} else if(row) { 
-				console.log(_foreach(row));
-			}
-		});
-	}
-	static pretty_row(row) {
-		return {
-			username: row.hashname.toString(),
-			userpass: DebugAux.hex_buffer(row.hashpass),
-			last_try: row.last_try,
-			tries: row.tries,
-			config: row.config,
-		}
-	}
-}
+
 
 export function LoginDB(database, config) {
-	const helpers = new Helpers(database, config);
+	const helpers = LoginHelpers(database, config);
 	const asyncdb = helpers.asyncdb;
 	function atomic_auth(hashname, hashpass) {
 		let viewname = ensure_buffer(hashname);
@@ -400,7 +416,6 @@ export function LoginDB(database, config) {
 export default LoginDB;
 
 /* ======== TESTS ========
-*/
 const raw_db = new sqlite.Database(':memory:');
 async function test_promisefy() {
 	const nxt_db = new promisefySqlite(raw_db);
