@@ -45,9 +45,24 @@ export class InvalidPassword extends DatabaseError {
 }
 // internal sql error
 export class SQLInternalError extends CommonDatabaseError { 
-	constructor(err) {
-		super("A Internal Error was found while fetching the database");
+	constructor(err, message = "A Internal Error was found while fetching the database") {
+		super(message);
 		this.sql_error = err;
+	}
+}
+export class InvalidGroup extends DatabaseError {
+	constructor(message = "Invalid groupname") {
+		super(message);
+	}
+}
+export class GroupDoesntMacth extends DatabaseError {
+	constructor(message = "The groupname does not match") {
+		super(message);
+	}
+}
+export class AtomicError extends SQLInternalError {
+	constructor(err, message = "A error was found... rollback done") {
+		super(err, message);
 	}
 }
 // constants 
@@ -82,17 +97,124 @@ export class promisefySqlite {
 	as_callback(query, params, operation, allow_this = false) {
 		const database = this.database;
 		return new Promise(function(res, rej){
-			params.push(function(err, row) {
-				//console.log({ query, params, row, err, _this_: this});
-				if(err != null) { 
-					rej(new SQLInternalError(err)); 
-				} else { 
-					res(row, allow_this ? this : undefined); 
-				}
-			});
+			//console.log({ query, params});
+			params.push(promisefySqlite.error_callback(res, rej));
 			operation.call({database, query, params}, []);
 		});
 	}
+	static error_callback(res, rej, allow_this) {
+		return function(err, row) {
+			//console.log({row, err, _this_: this})
+			if(err != null) { 
+				rej(new SQLInternalError(err)); 
+			} else { 
+				res(row, allow_this ? this : undefined); 
+			}
+		}
+	}
+}
+/*
+export class AsyncAtomDatabase {
+	constructor(database) {
+		this.database = database;
+		this.clear();
+	}
+	atomic_run() {
+		const that = this;
+		return new Promise(function(res, rej){
+			that.database.serialize(function(){
+				const database = that.database;
+				function next(now){
+					walker(now.next);
+				}
+				function walker(now) {
+					console.log({
+						query: now.query,
+						params: now.params,
+						name: now.name,
+					});
+					if(!now) {
+						that.database.run("COMMIT;");
+						that.call_sucess();
+						that.clear();
+						return;
+					}
+					
+					const e = that.run_operation(now, rollback, next, allow_this);
+					if(e) {
+						that.call_error();
+					}
+				}
+				walker(that.first);
+			});
+		}) 
+	}
+	run_operation(operation, next) {
+		const create = AsyncAtomDatabase.create_sqlparams;
+		const name = operation.name
+		const params = create(operation, next, name === "run");
+		const simple = ["run", "exec", "get", "each"];
+		if(simple.indexOf(name) !== -1) {
+			try {
+				this.database[name](...params);
+			} catch (err) {
+				return err;
+			}
+		}
+	}
+	run(query, ...params) {
+		return this.create_operation("run", query, params);
+	}
+	exec(query, ...params) {
+		return this.create_operation("exec", query, params);
+	}
+	get(query, ...params) {
+		return this.create_operation("get", query, params);
+	}
+	each(query, ...params) {
+		return this.create_operation("each", query, params);
+	}
+	call_sucess() {
+		let operation = first;
+		while(operation.next) {
+			operation.on_sucess(...arrayfy(operation.result));
+			operation = operation.next;
+		}
+	}
+	call_error(error) {
+		let operation = this.first;
+		while(operation.next) {
+			operation.on_error(error);
+			operation = operation.next;
+		}
+	}
+	create_operation(name, query, params) {
+		const that = this;
+		return new Promise(function(on_sucess, on_error){
+			const operation = {
+				name: "run", query, params, on_sucess, on_error
+			};
+			const last = that.last;
+			last.next = operation;
+			that.last = operation;
+		});
+	}
+	clear() {
+		this.last = {}
+		this.create_operation("run", "BEGIN;", []);
+		this.first = this.last;
+	}
+	static create_sqlparams(operation, rollback, next, allow_this) {
+		function res(...params){
+			operation.result = params;
+			next();
+		}
+		const handler = promisefySqlite.error_callback(res, () => (), allow_this);
+		return [operation.query, ...operation.params, handler];
+	}
+}*/
+function arrayfy(src) {
+	return Array.isArray(src) ? src : [src];
 }
 export function create_unblocker(seconds) {
 	return function(user){
@@ -202,12 +324,15 @@ export class DebugAux {
 		return res.join("");
 	}
 	static show_database(database) {
+		return DebugAux.unsafe_show_database(database, "main");
+	}
+	static unsafe_show_database(database, table = "main", _foreach = DebugAux.pretty_row) {
 		const asyncdb = new promisefySqlite(database);
-		return asyncdb.each("SELECT * FROM main", function(err, row){
+		return asyncdb.each(`SELECT * FROM ${table}`, function(err, row){
 			if(err != null) { 
 				console.log(new SQLInternalError(err)); 
 			} else if(row) { 
-				console.log(DebugAux.pretty_row(row));
+				console.log(_foreach(row));
 			}
 		});
 	}
@@ -273,18 +398,18 @@ export function LoginDB(database, config) {
 	this.auth = atomic_auth;
 }
 export default LoginDB;
-const raw_db = new sqlite.Database(':memory:');
+
 /* ======== TESTS ========
-
-
+*/
+const raw_db = new sqlite.Database(':memory:');
 async function test_promisefy() {
 	const nxt_db = new promisefySqlite(raw_db);
 	await nxt_db.exec("CREATE TABLE simple (src STRING, num INT)")
 	await nxt_db.exec("INSERT INTO simple VALUES ('hello', 5)")
 	await nxt_db.get("SELECT * FROM simple WHERE src = 'hello'")
-	console.log(await nxt_db.get("DELETE FROM main WHERE src = ? LIMIT BY 1", "hello"));
+	console.log(await nxt_db.run("DELETE FROM simple WHERE src = ?", "hello"));
 	await nxt_db.exec("CREATE TABLE blobfy (src BLOB)");
-	await nxt_db.run("INSERT INTO blobfy VALUES (?)", new libbufer.Blob(["hello"]))
+	await nxt_db.run("INSERT INTO blobfy VALUES (?)", libbuffer.Buffer.from("hello", "utf-8"))
 	await nxt_db.get("SELECT * FROM blobfy");
 }
 async function test_login() {
@@ -319,6 +444,16 @@ async function test_login() {
 	await db.remove(name_1, pass_1);
 	await expected_fail(db.remove(name_1, pass_1), new UserNotExists());
 }
+/*async function test_atomicdb() {
+	const atomdb = new AsyncAtomDatabase(raw_db);
+	atomdb.run("CREATE TABLE atom (name STRING PRIMARY KEY, id INTEGER)");
+	atomdb.run("INSERT INTO atom VALUES ('atom-hello-2', 51)");
+	atomdb.run("INSERT INTO atom VALUES ('atom-hello-1', 176)");
+	atomdb.run("INSERT OR FAIL INTO atom VALUES ('atom-hello-2', 99)");
+	atomdb.run("INSERT OR FAIL INTO atom VALUES ('atom-hello-2', 99)");
+	await atomdb.atomic_run().catch(console.log);
+	await DebugAux.unsafe_show_database(raw_db, "atom", row => row);
+}*/
 //test_promisefy()
 //test_login();
-*/
+//test_atomicdb();
