@@ -125,7 +125,7 @@ function setup_frontend() {
 function parseAuthError(e) {
 	console.log(e);
 	if(e instanceof sessions.AuthError)
-		if(e instanceof database.CommonDatabaseError)
+		if(e.auth_error instanceof database.CommonDatabaseError)
 			return database.parseError(e.auth_error);
 	else if(e instanceof sessions.SessionError)
 		return e.constructor.name;

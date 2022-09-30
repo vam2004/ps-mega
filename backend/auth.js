@@ -367,8 +367,8 @@ export function LoginDB(database, config) {
 	const helpers = LoginHelpers(database, config);
 	const asyncdb = helpers.asyncdb;
 	function atomic_auth(hashname, hashpass) {
-		let viewname = ensure_buffer(hashname);
-		let viewpass = ensure_buffer(hashpass);
+		const viewname = ensure_buffer(hashname);
+		const viewpass = ensure_buffer(hashpass);
 		return helpers.ensure_unblocked(helpers.get_user(viewname)).then(function(user){
 			if(!helpers.compare_pass(user.hashpass, viewpass)) {
 				return helpers.inclease_tries(viewname).then(() => Promise.reject(new InvalidPassword()));
@@ -379,7 +379,8 @@ export function LoginDB(database, config) {
 	function add(hashname, hashpass, config) {
 		const query = "INSERT OR ABORT INTO main VALUES (?, ?, 0, ?, ?)";
 		const now = helpers.encode_date(new Date());
-		return asyncdb.run(query, hashname, helpers.innerhasher(hashpass), now, config).catch(function(error){
+		const passwd = helpers.innerhasher(hashpass);
+		return asyncdb.run(query, hashname, passwd, now, config).catch(function(error){
 			var handled = error;
 			if(error instanceof SQLInternalError && error.sql_error.code === "SQLITE_CONSTRAINT")
 				handled = new UserAlreadyExists();
@@ -408,10 +409,23 @@ export function LoginDB(database, config) {
 			(hashname BLOB PRIMARY KEY, hashpass BLOB, tries INT, last_try STRING, config STRING)`;
 		return asyncdb.exec(query);
 	}
+	function change_pass(hashname, hashgroup, oldpass, newpass) {
+		const innerhasher = helpers.innerhasher;
+		const viewgroup = ensure_buffer(hashgroup); // to-do
+		const viewname = ensure_buffer(hashname);
+		const viewpass = ensure_buffer(oldpass);
+		const newpasswd = innerhasher(ensure_buffer(newpass));
+		const oldpasswd = innerhasher(viewpass);
+		const query = "UPDATE main SET hashpass = ?3 WHERE hashpass = ?2 AND hashname = ?1"
+		return atomic_auth(viewname, viewpass, viewgroup).then(function(){
+			return asyndb.run(query, viewname, oldpasswd, newpasswd);
+		})
+	}
 	this.remove = remove;
 	this.add = add;
 	this.create_schema = create_schema; 
 	this.auth = atomic_auth;
+	this.passwd = change_pass;
 }
 export default LoginDB;
 
@@ -472,3 +486,21 @@ async function test_login() {
 //test_promisefy()
 //test_login();
 //test_atomicdb();
+
+function PendingDB(database) {
+	const {
+		encode_date, decode_date, innerhasher
+	} = HashsAndDate();
+	const asyncdb = new promisefySqlite(database);
+	function create_schema() {
+		const query = `CREATE TABLE IF NOT EXISTS pending 
+			(hashname BLOB, hashgroup BLOB, hashpass BLOB, request_time STRING, lock INTEGER, userdata STRING, UNIQUE(hashname, hashgroup))`;
+		return asyncdb.exec(query);
+	}
+	function accept(hashuser, hashgroup) {
+		const viewname = ensure_buffer(hashname);
+		const viewgroup = ensure_buffer(hashgroup);
+		const q1 = "UPDATE pending SET "
+		asyncdb.run()
+	}
+}
