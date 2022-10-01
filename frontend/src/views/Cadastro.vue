@@ -6,48 +6,51 @@
         <div class="card-header">
           <span>Seja um membro do Mega Bank!!</span>
         </div>
-        <form>
+        <form id="base-form">
           <h5>Informações gerais</h5>
-          <input class="nome" type="text" placeholder="NOME COMPLETO" />
-          <input class="cpf" type="number" placeholder="CPF" />
+          <input name="name" id="nome" type="text" placeholder="NOME COMPLETO" />
+          <input name="cpf" id="cpf" type="text" placeholder="CPF" />
           <div class="ao-lado">
-            <input class="rg" type="number" placeholder="RG" />
-            <input class="emissor" type="text" placeholder="ORGÃO EMISSOR" />
+            <input name="rg" id="rg" type="text" placeholder="RG" />
+            <input name="emiter" id="emissor" type="text" placeholder="ORGÃO EMISSOR" />
           </div>
-          <input class="email" type="email" placeholder="EMAIL" />
+          <input name="email" id="email" type="email" placeholder="EMAIL" />
           <div class="ao-lado">
-            <input class="senha" type="password" placeholder="SENHA" />
+            <input name="userpass" class="senha" type="password" placeholder="SENHA" />
             <input
               class="senha"
               type="password"
+			  name="secondpass"
               placeholder="CONFIRMAÇÃO DE SENHA"
             />
           </div>
           <h5>Endereço</h5>
-          <input class="cep" type="number" placeholder="CEP" />
+          <input name="cep" id="cep" type="text" placeholder="CEP" />
           <div class="ao-lado">
-            <input class="rua" type="text" placeholder="RUA" />
-            <input class="numero" type="number" placeholder="Nº" />
+            <input name="street" id="rua" type="text" placeholder="RUA" />
+            <input name="number" id="numero" type="text" placeholder="Nº" />
           </div>
           <div class="ao-lado">
-            <input class="bairro" type="text" placeholder="Bairro" />
-            <input class="complemento" type="text" placeholder="COMPLEMENTO" />
+            <input name="district" id="bairro" type="text" placeholder="Bairro" />
+            <input name="compl" id="complemento" type="text" placeholder="COMPLEMENTO" />
           </div>
           <h5>Sobre suas finanças</h5>
           <div class="ao-lado">
-            <input class="profissao" type="text" placeholder="PROFISSÃO" />
-            <input class="renda" type="number" placeholder="RENDA" />
+            <input name="work" id="profissao" type="text" placeholder="PROFISSÃO" />
+            <input name="income" id="renda" type="text" placeholder="RENDA" />
           </div>
-          <router-link to="/">
-            <button>Crie sua conta</button>
-          </router-link>
+          <!---<router-link to="/">-->
+            <button v-on:click="register">Crie sua conta</button>
+          <!--</router-link>-->
         </form>
       </div>
     </div>
 
     <!--Logo-->
     <div class="side-b">
-      <div></div>
+      <div>
+        <img id="logo" src="Img/logo.png" alt="logo" />
+      </div>
     </div>
   </div>
 </template>
@@ -55,6 +58,36 @@
 <script>
 export default {
   nome: "Cadastro",
+  methods: {
+	register(evt) {
+		evt.preventDefault();
+		const source = document.querySelector("#base-form");
+		const raw = new FormData(source);
+		const data = {};
+		for(const pair of raw.entries()) {
+			const key = pair[0];
+			const value = pair[1];
+			console.log(key + ": " + value);
+			if(value !== undefined)
+				data[key] = value;
+		}
+		const that = this;
+		fetch("http://127.0.0.1:9001/fetch/register/", {
+			method: "POST", 
+			headers: { 
+				"Content-Type": "application/json",	
+			}, 
+			credentials: 'include',
+			body: JSON.stringify(data)
+		}).then(res => res.json()).then(function(res){
+			if(res.status === "error") {
+				alert("Error: " + res.message ?? "unknown");
+			} else if(res.status === "sucess") {
+				alert("O pedido de registro foi efetuado com sucesso. Aguarde a confimação");
+			}
+		}).catch(console.log);
+	}
+  }
 };
 </script>
 
@@ -158,25 +191,25 @@ form input {
   font-size: 1.2rem;
 }
 
-.nome {
+#nome {
   width: 50rem;
 }
-.cpf {
+#cpf {
   width: 27rem;
   /* TIRAR O CONTADOR */
 }
 
-.rg {
+#rg {
   width: 27rem;
   margin-right: 3rem;
 }
 
-.emissor {
+#emissor {
   width: 20rem;
   /* COLOCAR AO LADO DO RG */
 }
 
-.email {
+#email {
   width: 50rem;
 }
 
@@ -185,34 +218,34 @@ form input {
   margin-right: 3rem;
 }
 
-.cep {
+#cep {
   width: 23.5rem;
 }
 
-.rua {
+#rua {
   width: 40rem;
   margin-right: 3rem;
 }
 
-.numero {
+#numero {
   width: 7rem;
 }
 
-.bairro {
+#bairro {
   width: 23.5rem;
   margin-right: 3rem;
 }
 
-.complemento {
+#complemento {
   width: 23.5rem;
 }
 
-.profissao {
+#profissao {
   width: 23.5rem;
   margin-right: 3rem;
 }
 
-.renda {
+#renda {
   width: 23.5rem;
 }
 
@@ -238,5 +271,11 @@ form button {
 
   border: none;
   margin-top: 1.5rem;
+}
+#logo {
+  transform: rotate(80deg);
+  margin-left: 72rem;
+  width: 20rem;
+  margin-top: 25rem;
 }
 </style>
