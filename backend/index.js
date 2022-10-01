@@ -167,11 +167,13 @@ async function handle_register(req, res) {
 	
 	console.log("Request for registration:", userdata);
 	
+	const datastr = JSON.stringify(userdata);
+	
 	if(!nonempty_str(username) || !nonempty_str(userpass))
 		return Promise.resolve({ status: "error", message: "Needed a username and password" });
 	if(userpass !== secondpass)
 		return Promise.resolve({ status: "error", message: "password does not match" });
-	return reqdb.request(username, groupname, userpass, userdata)
+	return reqdb.request(username, groupname, userpass, datastr)
 	.then(function(){
 		const basegroup = req.session_data?.groupname;
 		if(can_register_another(basegroup, groupname))
