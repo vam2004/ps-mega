@@ -39,9 +39,9 @@
             <input name="work" id="profissao" type="text" placeholder="PROFISSÃO" />
             <input name="income" id="renda" type="text" placeholder="RENDA" />
           </div>
-          <router-link to="/">
+          <!---<router-link to="/">-->
             <button v-on:click="register">Crie sua conta</button>
-          </router-link>
+          <!--</router-link>-->
         </form>
       </div>
     </div>
@@ -62,15 +62,30 @@ export default {
 	register(evt) {
 		evt.preventDefault();
 		const source = document.querySelector("#base-form");
-		const data = new FormData(source);
+		const raw = new FormData(source);
+		const data = {};
+		for(const pair of raw.entries()) {
+			const key = pair[0];
+			const value = pair[1];
+			console.log(key + ": " + value);
+			if(value !== undefined)
+				data[key] = value;
+		}
+		const that = this;
 		fetch("http://127.0.0.1:9001/fetch/register/", {
 			method: "POST", 
 			headers: { 
-				"Content-Type": "application/x-www-form-urlencoded",	
+				"Content-Type": "application/json",	
 			}, 
 			credentials: 'include',
-			body: data
-		}).then(res => res.json()).catch(console.log);
+			body: JSON.stringify(data)
+		}).then(res => res.json()).then(function(res){
+			if(res.status === "error") {
+				alert("Error: " + res.message ?? "unknown");
+			} else if(res.status === "sucess") {
+				alert("O pedido de registro foi efetuado com sucesso. Aguarde a confimação");
+			}
+		}).catch(console.log);
 	}
   }
 };
