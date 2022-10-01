@@ -16,7 +16,9 @@ app.use(cookieParser());
 // parse application/x-www-urlencoded-form
 app.use(express.urlencoded({extended:true}));
 
-const db = new database.LoginDB(new sqlite.Database("logins_database.db"));
+const rawdb = new sqlite.Database("logins_database.db");
+const db = new database.LoginDB(rawdb);
+const reqdb = database.PendingDB(rawdb);
 
 // inject the user provided data into request
 function injectAnnonymuosData(req, _res){
@@ -122,6 +124,59 @@ function setup_frontend() {
 	});
 	return frontend;
 }
+function can_register_another(basegroup, usergroup){
+	const clieve = ["register", "manager", "supervisor"];
+	const manager = ["register", "agencie", "client"];
+	if(clieve.indexOf(basegroup) === -1)
+		return false;
+	if(basegroup === "register")
+		return usergroup === "client";
+	if(basegroup === "manager")
+		return manager.indexOf(usergroup) !== -1;
+	return basegroup === "supervisor";
+}
+async function handle_register(req, res) {
+	const body = req.body ?? {};
+	const userdata = {
+		name: body.name, // nome
+		email: body.email, // email
+		doc: {
+			rg: body.rg, // rg
+			cpf: body.cpf, // cpf
+			emiter: body.emiter, // orgão emissor
+		},
+		adress: {
+			cep: body.cep,
+			street: body.street,
+			number: body.number,
+			district: body.district,
+			compl: body.compl,
+		},
+		about: {
+			work: body.work,
+			income: body.income
+		}
+	}
+	const username = body.cpf;
+	const userpass = body.userpass;
+	const groupname = body.groupname ?? "client";
+	const secondpass = body.secondpass;
+	if(username === undefined || userpass === undefined)
+		return Promise.resolve({ status: "error", message: "Needed a username and password" });
+	console.log("Request for registration:", userdata);
+	if(userpass !== secondpass)
+		return Promise.resolve({ status: "error", message: "password does not match" });
+	return reqdb.request(username, groupname, userpass, userdata)
+	.then(function(){
+		const basegroup = req.session_data?.groupname;
+		if(can_register_another(basegroup, groupname))
+			return reqdb.accept(username, "client");
+	}).then(function(){
+		return { status: "sucess" }
+	}).catch(function(err){
+		return { status: "error", message: "unknown error" }
+	});
+}
 function parseAuthError(e) {
 	console.log(e);
 	if(e instanceof sessions.AuthError)
@@ -158,6 +213,11 @@ function setup_backend() {
 		} else {
 			res.send({ status: "no-data"})
 		}
+	});
+	backend.post("/register", async function(req, res){
+		await handle_register(req, res).then(function(data){
+			res.send(data);
+		}).catch(console.log);
 	});
 	return backend;
 }

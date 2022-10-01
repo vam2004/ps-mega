@@ -6,7 +6,7 @@ export function get_expiration(seconds) {
 }
 
 export function validate_roles(role) {
-	const user_roles = ["client", "agencie", "manager", "supervisor", "bank"];
+	const user_roles = ["client", "agencie", "register", "manager", "supervisor", "bank"];
 	return user_roles.indexOf(role) !== -1;
 }
 /** 

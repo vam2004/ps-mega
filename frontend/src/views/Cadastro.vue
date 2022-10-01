@@ -6,40 +6,41 @@
         <div class="card-header">
           <span>Seja um membro do Mega Bank!!</span>
         </div>
-        <form>
+        <form id="base-form">
           <h5>Informações gerais</h5>
-          <input id="nome" type="text" placeholder="NOME COMPLETO" />
-          <input id="cpf" type="text" placeholder="CPF" />
+          <input name="name" id="nome" type="text" placeholder="NOME COMPLETO" />
+          <input name="cpf" id="cpf" type="text" placeholder="CPF" />
           <div class="ao-lado">
-            <input id="rg" type="text" placeholder="RG" />
-            <input id="emissor" type="text" placeholder="ORGÃO EMISSOR" />
+            <input name="rg" id="rg" type="text" placeholder="RG" />
+            <input name="emiter" id="emissor" type="text" placeholder="ORGÃO EMISSOR" />
           </div>
-          <input id="email" type="email" placeholder="EMAIL" />
+          <input name="email" id="email" type="email" placeholder="EMAIL" />
           <div class="ao-lado">
-            <input class="senha" type="password" placeholder="SENHA" />
+            <input name="userpass" class="senha" type="password" placeholder="SENHA" />
             <input
               class="senha"
               type="password"
+			  name="secondpass"
               placeholder="CONFIRMAÇÃO DE SENHA"
             />
           </div>
           <h5>Endereço</h5>
-          <input id="cep" type="text" placeholder="CEP" />
+          <input name="cep" id="cep" type="text" placeholder="CEP" />
           <div class="ao-lado">
-            <input id="rua" type="text" placeholder="RUA" />
-            <input id="numero" type="text" placeholder="Nº" />
+            <input name="street" id="rua" type="text" placeholder="RUA" />
+            <input name="number" id="numero" type="text" placeholder="Nº" />
           </div>
           <div class="ao-lado">
-            <input id="bairro" type="text" placeholder="Bairro" />
-            <input id="complemento" type="text" placeholder="COMPLEMENTO" />
+            <input name="district" id="bairro" type="text" placeholder="Bairro" />
+            <input name="compl" id="complemento" type="text" placeholder="COMPLEMENTO" />
           </div>
           <h5>Sobre suas finanças</h5>
           <div class="ao-lado">
-            <input id="profissao" type="text" placeholder="PROFISSÃO" />
-            <input id="renda" type="text" placeholder="RENDA" />
+            <input name="work" id="profissao" type="text" placeholder="PROFISSÃO" />
+            <input name="income" id="renda" type="text" placeholder="RENDA" />
           </div>
           <router-link to="/">
-            <button>Crie sua conta</button>
+            <button v-on:click="register">Crie sua conta</button>
           </router-link>
         </form>
       </div>
@@ -57,6 +58,21 @@
 <script>
 export default {
   nome: "Cadastro",
+  methods: {
+	register(evt) {
+		evt.preventDefault();
+		const source = document.querySelector("#base-form");
+		const data = new FormData(source);
+		fetch("http://127.0.0.1:9001/fetch/register/", {
+			method: "POST", 
+			headers: { 
+				"Content-Type": "application/x-www-form-urlencoded",	
+			}, 
+			credentials: 'include',
+			body: data
+		}).then(res => res.json()).catch(console.log);
+	}
+  }
 };
 </script>
 
