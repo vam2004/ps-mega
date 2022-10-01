@@ -21,22 +21,29 @@ Some files are reusable pieces of code, these are the following libraries:
 # Installing
 To install this application you must clone this repository first. If you have the git already installed, then you achieve it by running:
 
-git clone https://github.com/vam2004/ps-mega.git
+~~~
+  git clone https://github.com/vam2004/ps-mega.git
+~~~
 
 Then, make sure that node was installed in yout machine. Then you can install the dependecies, which are needed to run application. If you have the npm already installed, you can do it by switching to `backend` and `frontend` directory and running in each of them:
 
-npm install
+~~~
+  npm install
+~~~
 
 # Start the servers
 To start the frontend, go to `frontend` and then run:
 
+~~~
   vue serve
-  
+~~~
+
  The frontend will expect that the backend was running at adress `127.0.0.1:9001`. Therefore, you should make sure to start the backend 
  before interacting with the frontend. This can be done by opening a terminal at folder `backend` and running:
  
- node index.js
- 
+ ~~~
+  node index.js
+ ~~~
 # Command line managment
 
 Since that database managment is not exposed to client-side under Web APIs (js, wasm, css and html), you will need to use that tools under `backend/request_cli` and `backend/database_cli` directories to manage the database.
