@@ -1,0 +1,192 @@
+html, body {
+	margin: 0;
+}
+html {
+	height: 100%;
+	width: 100%;
+	/*background: url('texture.jpg');
+	background-size: cover;*/
+}
+body{
+    width: 100%;
+	height: 100%;
+    background: linear-gradient(135deg, #BF1205d7 14.64%, #2E0038d7 85.36%);
+    /* rgb(191,18, 5) rbg(66, 4, 48) rgb(48, 1, 54) rgb(46, 0, 56)*/
+}
+
+
+
+
+.box{
+    background-color: #F4F7F6;
+    position: absolute;
+    width: 286px;
+    height: 370px;
+    left: 70px;
+    top: 105px;
+    border-radius: 20px;
+    box-shadow: 10px 10px 5px rgba(0, 0, 0, 0.25);
+}
+
+#header{
+    width: 100%;
+    height: 19%;
+    box-shadow: 0px 6px 5px rgba(0, 0, 0, 0.25);
+    border-radius: 19px 19px 0px 0px;
+}
+
+#title{
+    position:absolute;
+    width: 84%;
+    height: 29%;
+    left: 8%;
+    
+}
+
+#text{
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 800;
+    font-size: 21px;
+    line-height: 30px;
+    background: linear-gradient(135deg, #BF1205 14.64%, #2E0038 85.36%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+
+#login_box{
+    
+    height: 40px;
+    width: 75%;
+    margin-left: 30px;
+    margin-top: 55px;
+    border-radius: 7px;
+    background: rgba(150, 76, 173, 0.25);
+    border: 2px solid #C9C9C9;
+    
+}
+
+
+#login{
+    position: absolute;
+    width: 132px;
+    height: 20px;
+    left: 40px;
+    top: 120px;
+}
+
+#password{
+    
+    position: absolute;
+    width: 132px;
+    height: 20px;
+    left: 40px;
+    top: 185px;
+}
+
+#password_box{
+    
+    height: 40px;
+    width: 75%;
+    margin-left: 30px;
+    margin-top: 20px;
+    border-radius: 7px;
+    background: rgba(150, 76, 173, 0.25);
+    border: 2px solid #C9C9C9;
+}
+
+#login_bottom{
+
+    position:absolute;
+    height: 45px;
+    width: 230px;
+    left: 30px;
+    margin-top: 100px;
+    border-radius: 5px;
+    background: #0F0C0F;
+    color: white;
+    
+}
+
+
+#question{
+    position: absolute;
+    width: 251px;
+    height: 23px;
+    left: 110px;
+    top: 500px;
+    
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 22px;
+    
+    color: #FFFFFF;
+}
+
+#create_account{
+
+    position: absolute;
+    width: 176px;
+    height: 28px;
+    left: 130px;
+    top: 550px;
+
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 24px;
+    
+    
+}
+@keyframes circle_expasion {
+	from {
+		width: 10px;
+		height: 10px;
+	}
+	to {
+		width: max(125vw, 125vh);
+		height: max(125vw, 125vh);
+	}
+}
+@keyframes background_fading {
+	from {
+		opacity: 100%;
+	}
+	to {
+		opacity: 0%;
+	}
+}
+
+
+#loading-root {
+	position: absolute;
+	background-color: #000000;
+	z-index: 600;
+	height: 100vh;
+	width: 100vw;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	/*box-sizing: border-box;*/
+}
+#loading-root {
+	animation-timing-function: cubic-bezier(.50,.10,1,.10);
+	animation-name: background_fading;
+	animation-fill-mode: forwards;
+	animation-delay: 2.5s;
+	animation-duration: 2s;
+}
+#loading-circle {
+	animation-timing-function: ease;
+	animation-name: circle_expasion;
+	animation-fill-mode: forwards;
+	animation-duration: 2.5s;
+}
+
+

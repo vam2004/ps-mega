@@ -1,0 +1,11 @@
+<svg version="1.1" width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<linearGradient id="backcover" x1="0" y1="0" x2="2" y2="2">
+			<stop stop-color="#BF1205" offset="0%"/>
+			<stop stop-color="rgb(66, 4, 78)" offset="50%"/>
+			<stop stop-color="rgb(48, 1, 54)" offset="75%"/>
+			<stop stop-color="#2D0039" offset="100%"/>
+		</linearGradient>
+	</defs>
+	<circle cx="50%" cy="50%" r="49%" fill="url(#backcover)" stroke="#c73b2370" stroke-width="6px"/>
+</svg>
