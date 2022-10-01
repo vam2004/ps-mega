@@ -122,9 +122,12 @@ export class DebugAux {
 		return res.join("");
 	}
 	static show_database(database) {
-		return DebugAux.unsafe_show_database(database, "main");
+		console.log("=========== main table ===========")
+		return DebugAux.unsafe_show_database(database, "main", DebugAux.pretty_main_row).then(function(){
+			console.log("==================================");
+		});
 	}
-	static unsafe_show_database(database, table = "main", _foreach = DebugAux.pretty_row) {
+	static unsafe_show_database(database, table = "main", _foreach = (r => r)) {
 		const asyncdb = new promisefySqlite(database);
 		return asyncdb.each(`SELECT * FROM ${table}`, function(err, row){
 			if(err != null) { 
@@ -134,13 +137,13 @@ export class DebugAux {
 			}
 		});
 	}
-	static pretty_row(row) {
+	static pretty_main_row(row) {
 		return {
 			username: row.hashname.toString(),
 			userpass: DebugAux.hex_buffer(row.hashpass),
 			last_try: row.last_try,
 			tries: row.tries,
-			config: row.config,
+			userdata: row.userdata,
 		}
 	}
 }
@@ -272,8 +275,15 @@ export function PublicHelpers() {
 		}
 		return true;
 	}
+	function catch_userexists(error){
+		let handled = error;
+		if(error instanceof SQLInternalError && error.sql_error.code === "SQLITE_CONSTRAINT")
+			handled = new UserAlreadyExists();
+		return Promise.reject(handled);
+	}
 	return {
-		ensure_affected, compare_buffer
+		ensure_affected, compare_buffer, 
+		catch_userexists
 	};
 }
 function HashsAndDate(config) {
@@ -291,7 +301,8 @@ function HashsAndDate(config) {
 }
 function LoginHelpers(database, config) {
 	const {
-		ensure_affected, compare_buffer
+		ensure_affected, compare_buffer, 
+		catch_userexists
 	} = PublicHelpers();
 	const { 
 		encode_date, decode_date, innerhasher 
@@ -307,10 +318,10 @@ function LoginHelpers(database, config) {
 		this.last_try = decode_date(row.last_try);
 		this.config = config;
 		//this.__debug__ = row;
-		console.log("[DEBUG] fetched user from database:", DebugAux.pretty_row(row));
+		console.log("[DEBUG] fetched user from database:", this.pretty());
 	}
 	row_spec.prototype.pretty = function(){
-		return DebugAux.pretty_row(this);
+		return DebugAux.pretty_main_row(this);
 	}
 	
 	function get_user(hashname) {
@@ -354,7 +365,7 @@ function LoginHelpers(database, config) {
 		innerhasher, inclease_tries, clear_tries, 
 		compare_pass, get_user, ensure_affected, 
 		asyncdb, ensure_unblocked, encode_date, 
-		decode_date,
+		decode_date, catch_userexists
 	}
 }
 export function ensure_buffer(src) {
@@ -363,6 +374,8 @@ export function ensure_buffer(src) {
 	return src;
 }
 
+const MAIN_TABLE_SCHEMA = `CREATE TABLE IF NOT EXISTS main 
+	(hashname BLOB PRIMARY KEY, hashpass BLOB, tries INT, last_try STRING, userdata STRING)`;
 
 export function LoginDB(database, config) {
 	const helpers = LoginHelpers(database, config);
@@ -377,16 +390,12 @@ export function LoginDB(database, config) {
 			return Promise.resolve();
 		});
 	}
-	function add(hashname, hashpass, config) {
+	function add(hashname, hashpass, userdata) {
 		const query = "INSERT OR ABORT INTO main VALUES (?, ?, 0, ?, ?)";
 		const now = helpers.encode_date(new Date());
 		const passwd = helpers.innerhasher(hashpass);
-		return asyncdb.run(query, hashname, passwd, now, config).catch(function(error){
-			var handled = error;
-			if(error instanceof SQLInternalError && error.sql_error.code === "SQLITE_CONSTRAINT")
-				handled = new UserAlreadyExists();
-			return Promise.reject(handled);
-		});
+		return asyncdb.run(query, hashname, passwd, now, userdata)
+				.catch(helpers.catch_userexists);
 	}
 	function remove(hashname, hashpass) {
 		const query = "DELETE FROM main WHERE hashname = ?";
@@ -406,9 +415,7 @@ export function LoginDB(database, config) {
 		})
 	}
 	function create_schema() {
-		const query = `CREATE TABLE IF NOT EXISTS main 
-			(hashname BLOB PRIMARY KEY, hashpass BLOB, tries INT, last_try STRING, config STRING)`;
-		return asyncdb.exec(query);
+		return asyncdb.exec(MAIN_TABLE_SCHEMA);
 	}
 	function change_pass(hashname, hashgroup, oldpass, newpass) {
 		const innerhasher = helpers.innerhasher;
@@ -434,8 +441,11 @@ export function LoginDB(database, config) {
 }
 export default LoginDB;
 
+
 /* ======== TESTS ========
+*/
 const raw_db = new sqlite.Database(':memory:');
+
 async function test_promisefy() {
 	const nxt_db = new promisefySqlite(raw_db);
 	await nxt_db.exec("CREATE TABLE simple (src STRING, num INT)")
@@ -492,20 +502,114 @@ async function test_login() {
 //test_login();
 //test_atomicdb();
 
-function PendingDB(database) {
+export function PendingDB(database, config) {
+	const hex_buffer = DebugAux.hex_buffer;
+	const catch_userexists = PublicHelpers()
+							.catch_userexists;
 	const {
 		encode_date, decode_date, innerhasher
-	} = HashsAndDate();
+	} = HashsAndDate(config);
 	const asyncdb = new promisefySqlite(database);
-	function create_schema() {
+	function create_schema(cascade) {
 		const query = `CREATE TABLE IF NOT EXISTS pending 
-			(hashname BLOB, hashgroup BLOB, hashpass BLOB, request_time STRING, lock INTEGER, userdata STRING, UNIQUE(hashname, hashgroup))`;
-		return asyncdb.exec(query);
+			(hashname BLOB NOT NULL, hashgroup BLOB NOT NULL, hashpass BLOB NOT NULL, request_time STRING, lock INTEGER, userdata STRING, UNIQUE(hashname, hashgroup))`;
+		return asyncdb.exec(query).then(function(){
+			if(cascade)
+				return asyncdb.exec(MAIN_TABLE_SCHEMA);
+		});
 	}
-	function accept(hashuser, hashgroup) {
+	function accept(hashname, hashgroup) {
 		const viewname = ensure_buffer(hashname);
 		const viewgroup = ensure_buffer(hashgroup);
-		const q1 = "UPDATE pending SET "
-		asyncdb.run()
+		const lockquery = "UPDATE pending SET lock = ? WHERE lock = ? AND hashname = ? AND hashgroup = ?";
+		const copyquery = "INSERT INTO main (hashname, hashpass, tries, last_try, userdata) SELECT pending.hashname, pending.hashpass, 0, pending.request_time AS last_try, pending.userdata FROM pending WHERE pending.hashname = ? AND pending.hashgroup = ?";
+		const remquery = "DELETE FROM pending WHERE lock = 2 AND hashname = ? AND hashgroup = ?"
+		return asyncdb.run(lockquery, 1, 0, viewname, viewgroup).then(function(){
+			return asyncdb.run(copyquery, viewname, viewgroup);
+		}).then(function(){
+			asyncdb.run(lockquery, 2, 1, viewname, viewgroup);
+		}).then(function(){
+			asyncdb.run(remquery, viewname, viewgroup);
+		})
+	}
+	function row_spec(row) {
+		this.hashname = row.hashname;
+		this.hashgroup = row.hashgroup;
+		this.hashpass = row.hashpass;
+		this.request_time = row.request_time;
+		this.lock = row.lock;
+		this.userdata = row.userdata;
+	}
+	row_spec.prototype.pretty = function() {
+		return {
+			name: this.hashname.toString(),
+			group: this.hashgroup.toString(),
+			time: this.request_time,
+			lock: this.lock,
+			data: this.userdata
+		}
+	}
+	row_spec.prototype.pretty_leak = function() {
+		const pretty = this.pretty();
+		pretty.passwd = hex_buffer(this.hashpass);
+		return pretty;
+	}
+	function viewleak() {
+		console.log("========== pending table =========")
+		return asyncdb.each("SELECT * FROM pending", function(err, row){
+			if(err === null) {
+				console.log(new row_spec(row).pretty_leak());
+			} else {
+				console.log(err);
+			}
+		}).then(function(){
+			console.log("==================================")
+		});
+	}
+	function showall() {
+		console.log("========== pending table =========")
+		return asyncdb.each("SELECT * FROM pending", function(err, row){
+			if(err === null) {
+				console.log(new row_spec(row).pretty());
+			} else {
+				console.log(err);
+			}
+		}).then(function(){
+			console.log("==================================")
+		});
+	}
+	function reject(hashname, hashgroup) {
+		const viewname = ensure_buffer(hashname);
+		const viewgroup = ensure_buffer(hashgroup);
+		const query = "DELETE FROM pending WHERE lock = 0 AND hashname = ? AND hashgroup = ?";
+		return asyncdb.run(query, viewname, viewgroup);
+	}
+	function request(hashname, hashgroup, hashpass, userdata) {
+		const viewname = ensure_buffer(hashname);
+		const viewpass = ensure_buffer(hashpass);
+		const viewgroup = ensure_buffer(hashgroup);
+		const now = encode_date(new Date());
+		const passwd = innerhasher(hashpass);
+		const query = "INSERT OR FAIL INTO pending (hashname, hashgroup, hashpass, request_time, lock, userdata) VALUES (?, ?, ?, ?, 0, ?)";
+		return asyncdb.run(query, viewname, viewgroup, passwd, now, userdata)
+		.catch(catch_userexists);
+	}
+	return {
+		create_schema, request, 
+		showall, accept, reject
 	}
 }
+async function test_pending() {
+	const requests = PendingDB(raw_db);
+	await requests.create_schema(true);
+	await requests.request("user", "client", "none", "{}");
+	await requests.request("user", "bank", "none", "{}");
+	await requests.showall();
+	await requests.reject("user", "bank");
+	await requests.showall();
+	await DebugAux.show_database(raw_db);
+	await requests.accept("user", "client");
+	await DebugAux.show_database(raw_db);
+	await requests.showall();
+}
+//test_pending();
