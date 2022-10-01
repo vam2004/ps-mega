@@ -135,6 +135,9 @@ function can_register_another(basegroup, usergroup){
 		return manager.indexOf(usergroup) !== -1;
 	return basegroup === "supervisor";
 }
+function nonempty_str(src) {
+	return typeof src === "string" && src !== "";
+}
 async function handle_register(req, res) {
 	const body = req.body ?? {};
 	const userdata = {
@@ -161,9 +164,11 @@ async function handle_register(req, res) {
 	const userpass = body.userpass;
 	const groupname = body.groupname ?? "client";
 	const secondpass = body.secondpass;
-	if(username === undefined || userpass === undefined)
-		return Promise.resolve({ status: "error", message: "Needed a username and password" });
+	
 	console.log("Request for registration:", userdata);
+	
+	if(!nonempty_str(username) || !nonempty_str(userpass))
+		return Promise.resolve({ status: "error", message: "Needed a username and password" });
 	if(userpass !== secondpass)
 		return Promise.resolve({ status: "error", message: "password does not match" });
 	return reqdb.request(username, groupname, userpass, userdata)
